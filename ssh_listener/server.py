@@ -77,7 +77,7 @@ class SSHServerSocket:
         self.keystroke_callback = keystroke_callback
         self.prompt_callback = prompt_callback
         self.hassh_callback = hassh_callback          # (transport, session_id, client_ip, username)
-        self.connection_callback = connection_callback  # (client_ip) — for DDoS tracking
+        self.connection_callback = connection_callback  # (client_ip) — for RSA tracking
         self.running = False
         self.server_socket = None
         self.key_file = "logs/ssh_host_key"
@@ -127,7 +127,7 @@ class SSHServerSocket:
                 client_ip = addr[0]
                 logger.info(f"Incoming connection from {client_ip}:{addr[1]}")
 
-                # DDoS tracking: record every incoming connection
+                # RSA tracking: record every incoming connection
                 if self.connection_callback:
                     try:
                         self.connection_callback(client_ip)

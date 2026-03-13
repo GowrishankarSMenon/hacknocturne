@@ -34,7 +34,7 @@ from agents.command_handler import CommandHandler
 from agents.breadcrumbs import BreadcrumbAgent
 from agents.timing_analyzer import TimingAnalyzer
 from agents.hassh_fingerprinter import HASSHFingerprinter
-from agents.ddos_detector import DDoSDetector
+from agents.rsa_detector import RSADetector
 from state_manager.database import GhostNetDatabase, SessionDatabase
 from state_manager.file_system import VirtualFileSystem, FSNode
 from agents.intelligence_agency import GeneralIntelligenceAgency
@@ -83,9 +83,9 @@ class GhostNetHoneypot:
         self.hassh_fingerprinter = HASSHFingerprinter(self.database)
         logger.info("✓ HASSH Fingerprinter initialized")
 
-        # DDoS Detector
-        self.ddos_detector = DDoSDetector(self.database)
-        logger.info("✓ DDoS Detector initialized")
+        # RSA Detector
+        self.rsa_detector = RSADetector(self.database)
+        logger.info("✓ RSA Detector initialized")
 
         # General Intelligence Agency — session watchdog
         self.gia = GeneralIntelligenceAgency(self.active_sessions, self.database)
@@ -160,11 +160,11 @@ class GhostNetHoneypot:
                 logger.info(f"🔧 Known tool identified: {tool} (HASSH: {hassh[:12]}...)")
 
     def _on_connection(self, client_ip: str):
-        """Callback: record connection for DDoS analysis."""
-        alert = self.ddos_detector.record_connection(client_ip)
+        """Callback: record connection for RSA analysis."""
+        alert = self.rsa_detector.record_connection(client_ip)
         if alert:
             logger.warning(
-                f"🔥 DDoS ALERT [{alert['type']}] from {client_ip} — "
+                f"🔥 Random Segment Assessment ALERT [{alert['type']}] from {client_ip} — "
                 f"Severity: {alert['severity']} | Score: {alert['similarity_score']}/100"
             )
 
