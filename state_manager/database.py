@@ -91,6 +91,16 @@ class GhostNetDatabase:
         conn.close()
         return affected
 
+    def get_all_sessions(self) -> List[Dict]:
+        """Get all sessions (active + closed) for historical analytics."""
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sessions ORDER BY start_time DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
     # ─── Live typing (shared, for dashboard) ───
 
     def upsert_live_typing(self, session_id: str, buffer: str):
