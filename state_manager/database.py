@@ -135,6 +135,25 @@ class GhostNetDatabase:
         # Also clear live typing
         self.clear_live_typing(session_id)
 
+    def get_session(self, session_id: str) -> Optional[Dict]:
+        """Get session metadata by session_id."""
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_session_hassh(self, session_id: str) -> Optional[str]:
+        """Get the HASSH fingerprint for a specific session."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT hassh FROM hassh_fingerprints WHERE session_id = ? LIMIT 1", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
     def get_active_sessions(self) -> List[Dict]:
         conn = sqlite3.connect(self.db_file)
         conn.row_factory = sqlite3.Row
@@ -237,6 +256,15 @@ class GhostNetDatabase:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def clear_rsa_alerts(self):
+        """Clear all RSA alerts and associated cyber actions."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cyber_actions")
+        cursor.execute("DELETE FROM rsa_alerts")
+        conn.commit()
+        conn.close()
 
     def record_cyber_action(self, alert_id: int, action: str, operator: str = "system"):
         conn = sqlite3.connect(self.db_file)
@@ -450,6 +478,17 @@ class SessionDatabase:
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def clear_threat_events(self, event_type: str = None):
+        """Clear threat events. If event_type given, only clear that type."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        if event_type:
+            cursor.execute("DELETE FROM threat_events WHERE event_type = ?", (event_type,))
+        else:
+            cursor.execute("DELETE FROM threat_events")
+        conn.commit()
+        conn.close()
 
     # ─── Report Data ───
 
