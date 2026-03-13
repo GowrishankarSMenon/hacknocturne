@@ -51,6 +51,44 @@ class GhostNetDatabase:
         )
         """)
 
+        # HASSH fingerprints (global — for cross-IP correlation)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS hassh_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            client_ip TEXT,
+            hassh TEXT,
+            username TEXT,
+            timestamp TIMESTAMP
+        )
+        """)
+
+        # DDoS alerts
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ddos_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_ip TEXT,
+            alert_type TEXT,
+            severity TEXT,
+            similarity_score INTEGER,
+            details TEXT,
+            timestamp TIMESTAMP,
+            resolved INTEGER DEFAULT 0
+        )
+        """)
+
+        # Cyber team actions on alerts
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cyber_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id INTEGER,
+            action TEXT,
+            operator TEXT DEFAULT 'system',
+            timestamp TIMESTAMP,
+            FOREIGN KEY(alert_id) REFERENCES ddos_alerts(id)
+        )
+        """)
+
         conn.commit()
         conn.close()
 
@@ -122,6 +160,102 @@ class GhostNetDatabase:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM sessions ORDER BY start_time DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    # ─── HASSH Fingerprinting ───
+
+    def record_hassh(self, session_id: str, client_ip: str, hassh: str, username: str = "user"):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO hassh_fingerprints (session_id, client_ip, hassh, username, timestamp) VALUES (?, ?, ?, ?, ?)",
+            (session_id, client_ip, hassh, username, datetime.now())
+        )
+        conn.commit()
+        conn.close()
+
+    def get_hassh_sessions(self, hassh: str) -> List[Dict]:
+        """Get all sessions with a given HASSH (cross-IP correlation)."""
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM hassh_fingerprints WHERE hassh = ? ORDER BY timestamp DESC", (hassh,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_session_hassh(self, session_id: str) -> str:
+        """Get HASSH for a specific session."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT hassh FROM hassh_fingerprints WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def get_all_hassh(self) -> List[Dict]:
+        """Get all HASSH fingerprints."""
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM hassh_fingerprints ORDER BY timestamp DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    # ─── DDoS Alerts ───
+
+    def record_ddos_alert(self, client_ip: str, alert_type: str, severity: str,
+                          similarity_score: int, details: dict):
+        import json
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO ddos_alerts (client_ip, alert_type, severity, similarity_score, details, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            (client_ip, alert_type, severity, similarity_score, json.dumps(details), datetime.now())
+        )
+        conn.commit()
+        conn.close()
+
+    def get_ddos_alerts(self) -> List[Dict]:
+        """Get all unresolved DDoS alerts."""
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ddos_alerts WHERE resolved = 0 ORDER BY timestamp DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def get_all_ddos_alerts(self) -> List[Dict]:
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ddos_alerts ORDER BY timestamp DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def record_cyber_action(self, alert_id: int, action: str, operator: str = "system"):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO cyber_actions (alert_id, action, operator, timestamp) VALUES (?, ?, ?, ?)",
+            (alert_id, action, operator, datetime.now())
+        )
+        # Mark alert as resolved if action is Block or Dismiss
+        if action in ("Block", "Dismiss"):
+            cursor.execute("UPDATE ddos_alerts SET resolved = 1 WHERE id = ?", (alert_id,))
+        conn.commit()
+        conn.close()
+
+    def get_cyber_actions(self, alert_id: int) -> List[Dict]:
+        conn = sqlite3.connect(self.db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cyber_actions WHERE alert_id = ? ORDER BY timestamp DESC", (alert_id,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]

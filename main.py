@@ -33,6 +33,8 @@ from agents.os_simulator import Orchestrator, Profiler
 from agents.command_handler import CommandHandler
 from agents.breadcrumbs import BreadcrumbAgent
 from agents.timing_analyzer import TimingAnalyzer
+from agents.hassh_fingerprinter import HASSHFingerprinter
+from agents.ddos_detector import DDoSDetector
 from state_manager.database import GhostNetDatabase, SessionDatabase
 from state_manager.file_system import VirtualFileSystem, FSNode
 from agents.intelligence_agency import GeneralIntelligenceAgency
@@ -77,6 +79,14 @@ class GhostNetHoneypot:
         self.timing_analyzer = TimingAnalyzer()
         logger.info("Timing Analyzer initialized")
 
+        # HASSH Fingerprinter
+        self.hassh_fingerprinter = HASSHFingerprinter(self.database)
+        logger.info("✓ HASSH Fingerprinter initialized")
+
+        # DDoS Detector
+        self.ddos_detector = DDoSDetector(self.database)
+        logger.info("✓ DDoS Detector initialized")
+
         # General Intelligence Agency — session watchdog
         self.gia = GeneralIntelligenceAgency(self.active_sessions, self.database)
         self.gia.start()
@@ -90,7 +100,9 @@ class GhostNetHoneypot:
             live_feed_callback=self._update_live_typing,
             fingerprint_callback=self._on_fingerprint,
             keystroke_callback=self._on_keystroke,
-            prompt_callback=self._get_prompt
+            prompt_callback=self._get_prompt,
+            hassh_callback=self._on_hassh_captured,
+            connection_callback=self._on_connection,
         )
 
         # Buffer for fingerprint data (arrives before session DB row exists)
@@ -122,6 +134,32 @@ class GhostNetHoneypot:
                 if handler._is_root:
                     return "root@aeroghost:~# "
         return "user@aeroghost:~$ "
+
+    def _on_hassh_captured(self, transport, session_id: str, client_ip: str, username: str):
+        """Callback: compute and store HASSH fingerprint after SSH handshake."""
+        hassh = self.hassh_fingerprinter.compute_hassh(transport)
+        if hassh:
+            self.hassh_fingerprinter.record(session_id, client_ip, hassh, username)
+
+            # Cross-IP correlation check
+            correlated = self.hassh_fingerprinter.correlate(hassh)
+            ips = list(set(s['client_ip'] for s in correlated))
+            if len(ips) > 1:
+                logger.warning(f"🚨 HASSH CROSS-IP: {hassh[:12]}... seen from {len(ips)} IPs: {ips}")
+
+            # Identify known tool
+            tool = self.hassh_fingerprinter.identify_tool(hassh)
+            if tool:
+                logger.info(f"🔧 Known tool identified: {tool} (HASSH: {hassh[:12]}...)")
+
+    def _on_connection(self, client_ip: str):
+        """Callback: record connection for DDoS analysis."""
+        alert = self.ddos_detector.record_connection(client_ip)
+        if alert:
+            logger.warning(
+                f"🔥 DDoS ALERT [{alert['type']}] from {client_ip} — "
+                f"Severity: {alert['severity']} | Score: {alert['similarity_score']}/100"
+            )
 
     def _update_live_typing(self, session_id: str, buffer: str):
         """Callback for live keystroke feed."""

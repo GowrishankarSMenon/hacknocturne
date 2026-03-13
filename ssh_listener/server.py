@@ -67,7 +67,8 @@ class SSHServerSocket:
 
     def __init__(self, host="0.0.0.0", port=2222, command_handler=None, 
                  live_feed_callback=None, fingerprint_callback=None, 
-                 keystroke_callback=None, prompt_callback=None):
+                 keystroke_callback=None, prompt_callback=None,
+                 hassh_callback=None, connection_callback=None):
         self.host = host
         self.port = port
         self.command_handler = command_handler
@@ -75,6 +76,8 @@ class SSHServerSocket:
         self.fingerprint_callback = fingerprint_callback
         self.keystroke_callback = keystroke_callback
         self.prompt_callback = prompt_callback
+        self.hassh_callback = hassh_callback          # (transport, session_id, client_ip, username)
+        self.connection_callback = connection_callback  # (client_ip) — for DDoS tracking
         self.running = False
         self.server_socket = None
         self.key_file = "logs/ssh_host_key"
@@ -123,7 +126,14 @@ class SSHServerSocket:
                 client_socket, addr = self.server_socket.accept()
                 client_ip = addr[0]
                 logger.info(f"Incoming connection from {client_ip}:{addr[1]}")
-                
+
+                # DDoS tracking: record every incoming connection
+                if self.connection_callback:
+                    try:
+                        self.connection_callback(client_ip)
+                    except Exception as e:
+                        logger.debug(f"Connection callback error: {e}")
+
                 # Handle client in a new thread
                 client_thread = threading.Thread(
                     target=self._handle_client,
@@ -146,6 +156,13 @@ class SSHServerSocket:
             # Create server interface
             server = AeroGhostSSHServer(client_ip)
             transport.start_server(server=server)
+
+            # HASSH fingerprinting: extract after handshake completes
+            if self.hassh_callback:
+                try:
+                    self.hassh_callback(transport, server.session_id, client_ip, server.username or "user")
+                except Exception as e:
+                    logger.debug(f"HASSH callback error: {e}")
             
             # Capture SSH client version string
             client_version = getattr(transport, 'remote_version', 'unknown') or 'unknown'

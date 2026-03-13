@@ -372,15 +372,38 @@ with tab3:
             sdb = session_dbs.get(sid)
             cmd_count = len(sdb.get_commands()) if sdb else 0
             canary_count = len(sdb.get_canary_events()) if sdb else 0
+            hassh = db.get_session_hassh(sid) or "—"
             rows.append({
                 "IP": s['client_ip'],
                 "User": s.get('username', 'user'),
                 "Start": s['start_time'],
                 "Commands": cmd_count,
                 "Canaries Hit": canary_count,
+                "HASSH": hassh[:16] + "..." if len(hassh) > 16 else hassh,
                 "Status": s['status']
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch")
+
+        # Cross-IP correlation highlight
+        all_hassh = db.get_all_hassh()
+        hassh_groups = {}
+        for h in all_hassh:
+            hv = h.get('hassh', '')
+            if hv not in hassh_groups:
+                hassh_groups[hv] = set()
+            hassh_groups[hv].add(h.get('client_ip', ''))
+
+        correlated = {h: ips for h, ips in hassh_groups.items() if len(ips) > 1}
+        if correlated:
+            st.markdown("#### 🚨 Cross-IP Correlation (Same HASSH)")
+            for hassh_val, ips in correlated.items():
+                st.markdown(
+                    f'<div style="background:#da363322;border-left:4px solid #da3633;padding:8px 12px;margin:4px 0;border-radius:4px;">'
+                    f'<b>HASSH:</b> <code>{hassh_val[:24]}...</code> — '
+                    f'Seen from <b>{len(ips)}</b> IPs: {", ".join(ips)}'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
     else:
         st.info("No active sessions")
 
@@ -492,7 +515,7 @@ with tab4:
                 paper_bgcolor="rgba(0,0,0,0)",
                 font={"color": "#c9d1d9"},
             )
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, width="stretch")
 
             # ─── Command Timeline ───
             if commands:
@@ -530,7 +553,7 @@ with tab4:
                     xaxis={"gridcolor": "#30363d"},
                     yaxis={"gridcolor": "#30363d"},
                 )
-                st.plotly_chart(fig_timeline, use_container_width=True)
+                st.plotly_chart(fig_timeline, width="stretch")
 
             # ─── Intent Progression ───
             if intents:
@@ -600,6 +623,51 @@ with tab4:
                 else:
                     st.warning("Could not generate report — Groq API may not be available")
 
+    # ─── DDoS & Fingerprint Alerts (global, not per-session) ───
+    st.divider()
+    st.markdown("#### 🔥 DDoS & Fingerprint Alerts")
+    ddos_alerts = db.get_ddos_alerts()
+    if ddos_alerts:
+        for alert in ddos_alerts:
+            alert_id = alert['id']
+            severity = alert.get('severity', 'MEDIUM')
+            sev_color = {'CRITICAL': '#ef4444', 'HIGH': '#f97316', 'MEDIUM': '#ffbd2e', 'LOW': '#27c93f'}.get(severity, '#8b949e')
+
+            try:
+                details = json.loads(alert.get('details', '{}')) if isinstance(alert.get('details'), str) else alert.get('details', {})
+            except Exception:
+                details = {}
+
+            with st.expander(f"⚠️ {alert['alert_type'].replace('_', ' ').title()} — {alert['client_ip']} ({severity})", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Similarity Score", f"{alert.get('similarity_score', 0)}/100")
+                c2.metric("Connections", details.get('connections_in_window', '?'))
+                c3.metric("Severity", severity)
+
+                hassh_vals = details.get('hassh_values', [])
+                if hassh_vals:
+                    st.markdown(f"**HASSH:** `{'`, `'.join(str(h)[:16] + '...' for h in hassh_vals)}`")
+
+                usernames = details.get('usernames', [])
+                if usernames:
+                    st.markdown(f"**Usernames:** {', '.join(usernames)}")
+
+                st.markdown(f"**Timestamp:** {alert.get('timestamp', 'N/A')}")
+
+                # Cyber team action dropdown
+                action = st.selectbox(
+                    "Response Action",
+                    ["— Select —", "Monitor", "Block", "Quarantine", "Dismiss"],
+                    key=f"action_{alert_id}"
+                )
+                if action != "— Select —":
+                    if st.button(f"Apply: {action}", key=f"apply_{alert_id}"):
+                        db.record_cyber_action(alert_id, action)
+                        st.success(f"Action '{action}' recorded for alert #{alert_id}")
+                        st.rerun()
+    else:
+        st.info("No DDoS alerts — system is monitoring incoming connections")
+
 # ═══════════════════════════════════════
 # TAB 5: GEO-INTELLIGENCE (Folium Map)
 # ═══════════════════════════════════════
@@ -648,8 +716,7 @@ with tab5:
                 fill_opacity=0.15,
                 weight=2,
             ).add_to(m)
-
-        st_folium(m, width=None, height=500, use_container_width=True)
+        st_folium(m, height=500, width="stretch")
 
         # Geo table below the map
         st.markdown("#### Attacker Origins")
@@ -662,11 +729,11 @@ with tab5:
                 "ISP": g.get('isp', 'N/A'),
                 "Organization": g.get('org', 'N/A'),
             })
-        st.dataframe(pd.DataFrame(geo_table), use_container_width=True)
+        st.dataframe(pd.DataFrame(geo_table), width="stretch")
     else:
         # Show empty dark map
         m = folium.Map(location=[20, 0], zoom_start=2, tiles="CartoDB dark_matter")
-        st_folium(m, width=None, height=400, use_container_width=True)
+        st_folium(m, height=400, width="stretch")
         st.info("No active sessions to geolocate. Waiting for connections...")
 
 # ═══════════════════════════════════════
@@ -710,7 +777,7 @@ with tab6:
                 paper_bgcolor="rgba(0,0,0,0)",
                 font={"color": "#c9d1d9"},
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
 
         # ─── Summary Stats ───
         st.markdown("#### Summary")
