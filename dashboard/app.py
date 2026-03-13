@@ -417,6 +417,50 @@ with tab4:
             c3.metric("Canaries Planted", len(canaries))
             c4.metric("Canaries Triggered", len(triggered))
 
+            # ─── Attacker Profile Card ───
+            st.markdown("#### Attacker Profile")
+            client_sw = selected_session_obj.get('client_software', 'N/A') or 'N/A'
+            pw_used = selected_session_obj.get('password_used', 'N/A') or 'N/A'
+            client_port = selected_session_obj.get('client_port', 'N/A') or 'N/A'
+            attacker_ip = selected_session_obj.get('client_ip', 'N/A')
+
+            # Geo lookup for the profile card
+            geo = lookup_ip(attacker_ip) if attacker_ip != 'N/A' else None
+            geo_city = geo.get('city', 'Unknown') if geo else 'Unknown'
+            geo_country = geo.get('country', 'Unknown') if geo else 'Unknown'
+            geo_isp = geo.get('isp', 'Unknown') if geo else 'Unknown'
+
+            # Bot detection from threat events
+            bot_events = [e for e in threat_events if e.get('event_type') == 'gia_warning']
+            bot_status = "Unknown"
+            for be in bot_events:
+                try:
+                    be_data = json.loads(be.get('data', '{}')) if isinstance(be.get('data'), str) else be.get('data', {})
+                    if be_data.get('check') == 'bot_detected':
+                        msg = be_data.get('message', '')
+                        if 'bot' in msg.lower():
+                            bot_status = "BOT DETECTED"
+                        elif 'suspicious' in msg.lower():
+                            bot_status = "Suspicious"
+                        else:
+                            bot_status = "Human"
+                except Exception:
+                    pass
+
+            st.markdown(f"""
+            <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;margin-bottom:16px;">
+                <table style="width:100%;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:13px;">
+                    <tr><td style="padding:4px 12px;color:#8b949e;">IP Address</td><td style="padding:4px 12px;">{html.escape(str(attacker_ip))}</td>
+                        <td style="padding:4px 12px;color:#8b949e;">SSH Client</td><td style="padding:4px 12px;">{html.escape(str(client_sw))}</td></tr>
+                    <tr><td style="padding:4px 12px;color:#8b949e;">Location</td><td style="padding:4px 12px;">{html.escape(geo_city)}, {html.escape(geo_country)}</td>
+                        <td style="padding:4px 12px;color:#8b949e;">Password Used</td><td style="padding:4px 12px;">{html.escape(str(pw_used))}</td></tr>
+                    <tr><td style="padding:4px 12px;color:#8b949e;">ISP</td><td style="padding:4px 12px;">{html.escape(geo_isp)}</td>
+                        <td style="padding:4px 12px;color:#8b949e;">Source Port</td><td style="padding:4px 12px;">{html.escape(str(client_port))}</td></tr>
+                    <tr><td style="padding:4px 12px;color:#8b949e;">Bot/Human</td><td style="padding:4px 12px;" colspan="3"><b style="color:{'#ef4444' if bot_status == 'BOT DETECTED' else '#ffbd2e' if bot_status == 'Suspicious' else '#27c93f'}">{bot_status}</b></td></tr>
+                </table>
+            </div>
+            """, unsafe_allow_html=True)
+
             # ─── Threat Score Gauge ───
             session_score = compute_threat_score(commands)
             s_color = threat_color(session_score)

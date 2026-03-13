@@ -89,7 +89,16 @@ class CommandHandler:
             "nano": self._cmd_nano,
             "vi": self._cmd_vi,
             "vim": self._cmd_vim,
+            "mysql": self._cmd_mysql,
+            "mysqldump": self._cmd_mysqldump,
+            "python3": self._cmd_python3,
+            "python": self._cmd_python3,
         }
+
+        # Session state
+        self._is_root = False
+        self._in_mysql = False
+        self._exfil_urls = []
 
     def execute(self, command_str: str) -> str:
         """
@@ -98,6 +107,10 @@ class CommandHandler:
         command_str = command_str.strip()
         if not command_str:
             return ""
+
+        # Handle MySQL session
+        if self._in_mysql:
+            return self._handle_mysql_query(command_str)
 
         # Handle pipes (just take the first command for now)
         if "|" in command_str:
@@ -878,12 +891,25 @@ class CommandHandler:
         lines.append(f"4 packets transmitted, 4 received, 0% packet loss, time 3004ms")
         return "\n".join(lines)
 
+    def _log_exfil_url(self, url: str):
+        """Log URLs the attacker tries to reach — potential C2 servers."""
+        if url and not url.startswith("-"):
+            self._exfil_urls.append(url)
+            logger.warning(f"[EXFIL ATTEMPT] Attacker tried to reach: {url}")
+
     def _cmd_wget(self, args: list) -> str:
-        url = args[-1] if args else ""
-        return f"--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\nResolving {url}... failed: Name or service not known.\nwget: unable to resolve host address '{url}'"
+        url = next((a for a in args if not a.startswith("-")), "")
+        self._log_exfil_url(url)
+        host = url.replace("https://", "").replace("http://", "").split("/")[0] if url else url
+        return (
+            f"--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\n"
+            f"Resolving {host}... failed: Temporary failure in name resolution.\n"
+            f"wget: unable to resolve host address '{host}'"
+        )
 
     def _cmd_curl(self, args: list) -> str:
-        url = args[-1] if args else ""
+        url = next((a for a in args if not a.startswith("-")), "")
+        self._log_exfil_url(url)
         return f"curl: (6) Could not resolve host: {url}"
 
     # ──────────────────────────────────────────────
@@ -893,13 +919,33 @@ class CommandHandler:
     def _cmd_sudo(self, args: list) -> str:
         if not args:
             return "usage: sudo [-AbEHnPS] [-C num] [-g group] [-h host] [-p prompt] [-u user] [command [args]]"
+        
         subcmd = " ".join(args)
-        if args[0] == "su":
-            return "[sudo] password for user: \nuser is not in the sudoers file. This incident will be reported."
-        return f"[sudo] password for user: \nSorry, user is not allowed to execute '{subcmd}' as root on {HOSTNAME}."
+        
+        # sudo su / sudo -s / sudo bash → grant fake root
+        if args[0] in ("su", "-s", "bash", "-i") or subcmd in ("su -", "su root"):
+            self._is_root = True
+            logger.warning(f"[ESCALATION] Attacker escalated to root via sudo")
+            return "[sudo] password for user: \nroot@aeroghost:~#"
+        
+        # sudo with any other command — execute as root (pretend)
+        if args[0] == "-l":
+            return (
+                "Matching Defaults entries for user on aeroghost:\n"
+                "    env_reset, mail_badpass, secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin\n\n"
+                "User user may run the following commands on aeroghost:\n"
+                "    (ALL : ALL) ALL"
+            )
+        
+        # Grant sudo for any command
+        self._is_root = True
+        inner_result = self.execute(subcmd.lstrip("sudo ").strip())
+        return f"[sudo] password for user: \n{inner_result}" if inner_result else "[sudo] password for user: "
 
     def _cmd_su(self, args: list) -> str:
-        return "Password: \nsu: Authentication failure"
+        self._is_root = True
+        logger.warning(f"[ESCALATION] Attacker escalated to root via su")
+        return "Password: \nroot@aeroghost:~#"
 
     def _cmd_apt(self, args: list) -> str:
         if not args:
@@ -927,3 +973,117 @@ class CommandHandler:
 
     def _cmd_vim(self, args: list) -> str:
         return "Error opening terminal: unknown."
+
+    def _cmd_mysql(self, args: list) -> str:
+        """Fake MySQL interactive session."""
+        # Check flags: mysql -u root -p, mysql -u admin etc
+        self._in_mysql = True
+        logger.warning(f"[MYSQL] Attacker entered MySQL session")
+        user = "root"
+        for i, a in enumerate(args):
+            if a == "-u" and i + 1 < len(args):
+                user = args[i + 1]
+            elif a.startswith("-u"):
+                user = a[2:]
+        return (
+            f"Welcome to the MySQL monitor.  Commands end with ; or \\g.\n"
+            f"Your MySQL connection id is {random.randint(10, 99)}\n"
+            f"Server version: 8.0.35 MySQL Community Server - GPL\n\n"
+            f"Copyright (c) 2000, 2023, Oracle and/or its affiliates.\n\n"
+            f"Type 'help;' or '\\h' for help. Type '\\c' to clear the current input statement.\n\n"
+            f"mysql> "
+        )
+
+    def _handle_mysql_query(self, query: str) -> str:
+        """Handle queries inside the fake MySQL session."""
+        q = query.strip().rstrip(";").lower()
+        
+        if q in ("exit", "quit", "\\q"):
+            self._in_mysql = False
+            return "Bye"
+        
+        if q == "show databases":
+            return (
+                "+--------------------+\n"
+                "| Database           |\n"
+                "+--------------------+\n"
+                "| information_schema |\n"
+                "| mysql              |\n"
+                "| performance_schema |\n"
+                "| aeroghost_prod     |\n"
+                "| users_db           |\n"
+                "+--------------------+\n"
+                "5 rows in set (0.01 sec)\n\nmysql> "
+            )
+        
+        if q in ("use users_db", "use aeroghost_prod"):
+            db = q.split()[1]
+            return f"Database changed\nmysql> "
+        
+        if q == "show tables":
+            return (
+                "+---------------------------+\n"
+                "| Tables_in_users_db        |\n"
+                "+---------------------------+\n"
+                "| users                     |\n"
+                "| sessions                  |\n"
+                "| api_keys                  |\n"
+                "| payment_methods           |\n"
+                "+---------------------------+\n"
+                "4 rows in set (0.01 sec)\n\nmysql> "
+            )
+        
+        if "select" in q and "users" in q:
+            logger.warning(f"[MYSQL EXFIL] Attacker queried users table: {query}")
+            return (
+                "+----+------------------+------------------------------------------+----------+\n"
+                "| id | email            | password_hash                            | role     |\n"
+                "+----+------------------+------------------------------------------+----------+\n"
+                "|  1 | admin@company.io | $2b$12$K8GpFakeHashXXXXXXXXXXXXXXXXXXXXXX | admin    |\n"
+                "|  2 | dev@company.io   | $2b$12$L9HpFakeHashYYYYYYYYYYYYYYYYYYYYYY | dev      |\n"
+                "|  3 | alice@company.io | $2b$12$M0IpFakeHashZZZZZZZZZZZZZZZZZZZZZZ | user     |\n"
+                "+----+------------------+------------------------------------------+----------+\n"
+                "3 rows in set (0.02 sec)\n\nmysql> "
+            )
+        
+        if "select" in q and "api_keys" in q:
+            logger.warning(f"[MYSQL EXFIL] Attacker queried api_keys table: {query}")
+            return (
+                "+----+--------+--------------------------------------------------+\n"
+                "| id | user   | api_key                                          |\n"
+                "+----+--------+--------------------------------------------------+\n"
+                "|  1 | admin  | sk-FAKE-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  |\n"
+                "|  2 | dev    | sk-FAKE-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy  |\n"
+                "+----+--------+--------------------------------------------------+\n"
+                "2 rows in set (0.01 sec)\n\nmysql> "
+            )
+        
+        # Generic fallback
+        return f"Query OK (0.00 sec)\n\nmysql> "
+
+    def _cmd_mysqldump(self, args: list) -> str:
+        logger.warning(f"[MYSQLDUMP] Attacker attempted database dump")
+        return (
+            "-- MySQL dump 8.0.35  Distrib 8.0.35, for Linux (x86_64)\n"
+            "-- Host: localhost    Database: users_db\n"
+            "-- Server version\t8.0.35\n\n"
+            "/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;\n"
+            "-- Dump data for table `users`\n"
+            "INSERT INTO `users` VALUES (1,'admin@company.io','$2b$12$K8GpFakeHash',NULL,'admin');\n"
+            "INSERT INTO `users` VALUES (2,'dev@company.io','$2b$12$L9HpFakeHash',NULL,'dev');\n"
+            "-- Dump complete"
+        )
+
+    def _cmd_python3(self, args: list) -> str:
+        if not args:
+            return (
+                "Python 3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0] on linux\n"
+                "Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.\n"
+                ">>> "
+            )
+        if "-c" in args:
+            idx = args.index("-c")
+            code = args[idx + 1] if idx + 1 < len(args) else ""
+            logger.warning(f"[PYTHON EXEC] Attacker ran python -c: {code}")
+            return f"Traceback (most recent call last):\n  File \"<string>\", line 1\nPermissionError: [Errno 1] Operation not permitted"
+        return "python3: can't open file: No such file or directory"

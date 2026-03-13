@@ -23,15 +23,17 @@ class AeroGhostSSHServer(paramiko.ServerInterface):
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def check_auth_password(self, username, password):
-        """Accept any password"""
+        """Accept any password and record credentials."""
         self.username = username
-        logger.info(f"[{self.session_id}] Auth attempt - User: {username} | IP: {self.client_ip}")
+        self.password = password
+        logger.info(f"[{self.session_id}] Auth attempt - User: {username} | Pass: {password} | IP: {self.client_ip}")
         
         if self.log_callback:
             self.log_callback({
                 "timestamp": datetime.now().isoformat(),
                 "event": "auth_attempt",
                 "username": username,
+                "password": password,
                 "ip": self.client_ip,
                 "session_id": self.session_id
             })
@@ -63,11 +65,16 @@ class SSHServerSocket:
     and spawns handler threads.
     """
 
-    def __init__(self, host="0.0.0.0", port=2222, command_handler=None, live_feed_callback=None):
+    def __init__(self, host="0.0.0.0", port=2222, command_handler=None, 
+                 live_feed_callback=None, fingerprint_callback=None, 
+                 keystroke_callback=None, prompt_callback=None):
         self.host = host
         self.port = port
         self.command_handler = command_handler
         self.live_feed_callback = live_feed_callback
+        self.fingerprint_callback = fingerprint_callback
+        self.keystroke_callback = keystroke_callback
+        self.prompt_callback = prompt_callback
         self.running = False
         self.server_socket = None
         self.key_file = "logs/ssh_host_key"
@@ -130,6 +137,7 @@ class SSHServerSocket:
 
     def _handle_client(self, client_socket, client_ip, host_key):
         """Handle individual SSH client connection"""
+        client_port = client_socket.getpeername()[1]
         try:
             # Create SSH transport
             transport = paramiko.Transport(client_socket)
@@ -139,6 +147,10 @@ class SSHServerSocket:
             server = AeroGhostSSHServer(client_ip)
             transport.start_server(server=server)
             
+            # Capture SSH client version string
+            client_version = getattr(transport, 'remote_version', 'unknown') or 'unknown'
+            logger.info(f"SSH client version for {client_ip}: {client_version}")
+            
             # Get the channel
             channel = transport.accept(20)
             if channel is None:
@@ -146,6 +158,15 @@ class SSHServerSocket:
                 return
             
             logger.info(f"SSH channel opened for {client_ip} (User: {server.username})")
+            
+            # Send fingerprint data via callback
+            if self.fingerprint_callback:
+                self.fingerprint_callback(
+                    server.session_id,
+                    client_version,
+                    getattr(server, 'password', None),
+                    client_port
+                )
             
             # Handle shell interaction
             self._handle_shell(channel, server.session_id, client_ip)
@@ -158,9 +179,15 @@ class SSHServerSocket:
             except:
                 pass
 
+    def _get_prompt(self, session_id):
+        """Get the current prompt for this session (dynamic based on escalation state)."""
+        if self.prompt_callback:
+            return self.prompt_callback(session_id)
+        return "user@aeroghost:~$ "
+
     def _handle_shell(self, channel, session_id, client_ip):
         """Handle interactive shell communication with proper keystroke buffering"""
-        channel.send("user@aeroghost:~$ ")
+        channel.send(self._get_prompt(session_id))
         
         command_buffer = ""
         
@@ -187,7 +214,7 @@ class SSHServerSocket:
                             self.live_feed_callback(session_id, "")
                         
                         if not command:
-                            channel.send("user@aeroghost:~$ ")
+                            channel.send(self._get_prompt(session_id))
                             continue
                         
                         # Handle exit — notify command_handler so DB session is closed
@@ -215,7 +242,7 @@ class SSHServerSocket:
                             response = response.replace("\n", "\r\n")
                             channel.send(response + "\r\n")
                         
-                        channel.send("user@ghostnet:~$ ")
+                        channel.send(self._get_prompt(session_id))
                     
                     # Handle Backspace (0x7f or 0x08)
                     elif byte in (0x7f, 0x08):
@@ -231,7 +258,10 @@ class SSHServerSocket:
                     elif byte == 0x03:
                         command_buffer = ""
                         channel.send("^C\r\n")
-                        channel.send("user@aeroghost:~$ ")
+                        # Also exit MySQL session if active
+                        if self.command_handler:
+                            self.command_handler("__ctrl_c__", session_id, client_ip)
+                        channel.send(self._get_prompt(session_id))
                         # Clear live feed
                         if self.live_feed_callback:
                             self.live_feed_callback(session_id, "")
@@ -247,6 +277,9 @@ class SSHServerSocket:
                         command_buffer += char
                         # Echo character back to client
                         channel.send(char)
+                        # Record keystroke timing
+                        if self.keystroke_callback:
+                            self.keystroke_callback(session_id)
                         # Update live feed with current buffer
                         if self.live_feed_callback:
                             self.live_feed_callback(session_id, command_buffer)

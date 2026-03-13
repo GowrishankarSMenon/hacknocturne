@@ -35,7 +35,10 @@ class GhostNetDatabase:
             username TEXT,
             start_time TIMESTAMP,
             end_time TIMESTAMP,
-            status TEXT
+            status TEXT,
+            client_software TEXT,
+            password_used TEXT,
+            client_port INTEGER
         )
         """)
 
@@ -59,6 +62,28 @@ class GhostNetDatabase:
         VALUES (?, ?, ?, ?, ?)
         """, (session_id, client_ip, username, datetime.now(), "active"))
         conn.commit()
+        conn.close()
+
+    def update_session_fingerprint(self, session_id: str, client_software: str = None,
+                                     password_used: str = None, client_port: int = None):
+        """Update session with SSH fingerprint data."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        updates = []
+        params = []
+        if client_software is not None:
+            updates.append("client_software = ?")
+            params.append(client_software)
+        if password_used is not None:
+            updates.append("password_used = ?")
+            params.append(password_used)
+        if client_port is not None:
+            updates.append("client_port = ?")
+            params.append(client_port)
+        if updates:
+            params.append(session_id)
+            cursor.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?", params)
+            conn.commit()
         conn.close()
 
     def close_session(self, session_id: str):

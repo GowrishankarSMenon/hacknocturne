@@ -32,6 +32,7 @@ from ssh_listener.server import SSHServerSocket
 from agents.os_simulator import Orchestrator, Profiler
 from agents.command_handler import CommandHandler
 from agents.breadcrumbs import BreadcrumbAgent
+from agents.timing_analyzer import TimingAnalyzer
 from state_manager.database import GhostNetDatabase, SessionDatabase
 from state_manager.file_system import VirtualFileSystem, FSNode
 from agents.intelligence_agency import GeneralIntelligenceAgency
@@ -72,20 +73,55 @@ class GhostNetHoneypot:
         # Session tracking
         self.active_sessions = {}
 
+        # Timing analyzer for bot/human detection
+        self.timing_analyzer = TimingAnalyzer()
+        logger.info("Timing Analyzer initialized")
+
         # General Intelligence Agency — session watchdog
         self.gia = GeneralIntelligenceAgency(self.active_sessions, self.database)
         self.gia.start()
-        logger.info("✓ GIA (General Intelligence Agency) initialized")
+        logger.info("GIA (General Intelligence Agency) initialized")
 
         # SSH server
         self.ssh_server = SSHServerSocket(
             host="0.0.0.0",
             port=self.port,
             command_handler=self._handle_command,
-            live_feed_callback=self._update_live_typing
+            live_feed_callback=self._update_live_typing,
+            fingerprint_callback=self._on_fingerprint,
+            keystroke_callback=self._on_keystroke,
+            prompt_callback=self._get_prompt
         )
 
-        logger.info(f"✓ GhostNet initialized on port {self.port}")
+        # Buffer for fingerprint data (arrives before session DB row exists)
+        self._pending_fingerprints = {}
+
+        logger.info(f"AeroGhost initialized on port {self.port}")
+
+    def _on_fingerprint(self, session_id: str, client_version: str, password: str, client_port: int):
+        """Buffer fingerprint data — will be applied when session is created."""
+        self._pending_fingerprints[session_id] = {
+            'client_software': client_version,
+            'password_used': password,
+            'client_port': client_port
+        }
+        logger.info(f"[{session_id}] Fingerprint buffered: {client_version} | Port: {client_port}")
+
+    def _on_keystroke(self, session_id: str):
+        """Callback for every single keypress — feeds the timing analyzer."""
+        self.timing_analyzer.record_keystroke(session_id)
+
+    def _get_prompt(self, session_id: str) -> str:
+        """Return the current prompt based on session state."""
+        session = self.active_sessions.get(session_id)
+        if session:
+            handler = session.get('handler')
+            if handler:
+                if handler._in_mysql:
+                    return "mysql> "
+                if handler._is_root:
+                    return "root@aeroghost:~# "
+        return "user@aeroghost:~$ "
 
     def _update_live_typing(self, session_id: str, buffer: str):
         """Callback for live keystroke feed."""
@@ -128,6 +164,20 @@ class GhostNetHoneypot:
             }
             logger.info(f"[{session_id}] New session — isolated DB + filesystem created")
 
+            # Apply any buffered fingerprint data now that session row exists
+            if session_id in self._pending_fingerprints:
+                fp = self._pending_fingerprints.pop(session_id)
+                try:
+                    self.database.update_session_fingerprint(
+                        session_id,
+                        client_software=fp.get('client_software'),
+                        password_used=fp.get('password_used'),
+                        client_port=fp.get('client_port')
+                    )
+                    logger.info(f"[{session_id}] Fingerprint applied from buffer")
+                except Exception as e:
+                    logger.debug(f"Fingerprint apply failed: {e}")
+
         return self.active_sessions[session_id]
 
     def _on_canary_triggered(self, session_id: str, canary_info: dict):
@@ -150,6 +200,15 @@ class GhostNetHoneypot:
 
     def _handle_command(self, command: str, session_id: str, client_ip: str) -> str:
         """Main command handler."""
+        # Handle Ctrl+C signal — resets MySQL session and root state
+        if command == "__ctrl_c__":
+            session = self.active_sessions.get(session_id)
+            if session:
+                handler = session.get('handler')
+                if handler:
+                    handler._in_mysql = False
+            return ""
+
         try:
             session = self._get_session(session_id, client_ip)
             handler = session["handler"]
@@ -177,6 +236,25 @@ class GhostNetHoneypot:
 
             # GIA: record command timing for bot detection
             self.gia.record_command_time(session_id)
+
+            # Timing analyzer: check for reconnaissance burst
+            is_recon_burst = self.timing_analyzer.record_command_for_recon(session_id, command)
+            if is_recon_burst:
+                session_db.log_threat_event(
+                    "reconnaissance_burst",
+                    "high",
+                    {"message": f"Recon burst detected: {command}", "check": "reconnaissance_burst"}
+                )
+                logger.warning(f"[{session_id}] RECON BURST detected after: {command}")
+
+            # Timing analyzer: classify bot/human periodically
+            classification, avg_ipd = self.timing_analyzer.classify(session_id)
+            if classification in ("bot", "suspicious"):
+                session_db.log_threat_event(
+                    "gia_warning",
+                    "high" if classification == "bot" else "medium",
+                    {"check": "bot_detected", "message": f"Typing classified as {classification} (avg IPD: {avg_ipd}ms)"}
+                )
 
             logger.info(f"[{session_id}] Command: {command[:50]} ({execution_time}ms)")
 
