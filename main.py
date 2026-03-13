@@ -129,10 +129,17 @@ class GhostNetHoneypot:
         if session:
             handler = session.get('handler')
             if handler:
+                hostname = getattr(handler, 'current_hostname', 'aeroghost')
                 if handler._in_mysql:
                     return "mysql> "
                 if handler._is_root:
-                    return "root@aeroghost:~# "
+                    username = "root"
+                else:
+                    # Use node username if on a lateral node
+                    from agents.network_sim import get_node_info
+                    node = get_node_info(handler._current_node) if handler._current_node else None
+                    username = node["username"] if node else "user"
+                return f"{username}@{hostname}:~{'#' if handler._is_root else '$'} "
         return "user@aeroghost:~$ "
 
     def _on_hassh_captured(self, transport, session_id: str, client_ip: str, username: str):

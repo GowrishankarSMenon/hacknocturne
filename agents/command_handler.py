@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from state_manager.file_system import VirtualFileSystem, FSNode
+from agents.network_sim import NETWORK_NODES, resolve_target, build_node_filesystem, get_node_info
 
 logger = logging.getLogger(__name__)
 
@@ -93,12 +94,20 @@ class CommandHandler:
             "mysqldump": self._cmd_mysqldump,
             "python3": self._cmd_python3,
             "python": self._cmd_python3,
+            "ssh": self._cmd_ssh,
+            "scp": self._cmd_scp,
+            "nmap": self._cmd_nmap,
         }
 
         # Session state
         self._is_root = False
         self._in_mysql = False
         self._exfil_urls = []
+
+        # Lateral movement state
+        self._node_stack = []     # Stack of (hostname, filesystem) for nested pivots
+        self._current_node = None # Current lateral node name (None = honeypot root)
+        self.current_hostname = HOSTNAME  # Dynamic hostname for prompt
 
     def execute(self, command_str: str) -> str:
         """
@@ -128,6 +137,15 @@ class CommandHandler:
 
         cmd = parts[0]
         args = parts[1:]
+
+        # Handle 'exit' from a lateral node — return to parent
+        if cmd == "exit" and self._node_stack:
+            prev_hostname, prev_fs = self._node_stack.pop()
+            self.fs = prev_fs
+            self.current_hostname = prev_hostname
+            self._current_node = self._node_stack[-1][0] if self._node_stack else None
+            logger.warning(f"[LATERAL] Attacker returned to {self.current_hostname}")
+            return f"Connection to {self.current_hostname} closed."
 
         # Look up handler
         handler = self._commands.get(cmd)
@@ -689,20 +707,29 @@ class CommandHandler:
     # ──────────────────────────────────────────────
 
     def _cmd_whoami(self, args: list) -> str:
+        if self._current_node:
+            node = get_node_info(self._current_node)
+            return node["username"] if node else USERNAME
         return USERNAME
 
     def _cmd_hostname(self, args: list) -> str:
-        return HOSTNAME
+        return self.current_hostname
 
     def _cmd_uname(self, args: list) -> str:
+        kernel = KERNEL_VERSION
+        hostname = self.current_hostname
+        if self._current_node:
+            node = get_node_info(self._current_node)
+            if node:
+                kernel = node.get("kernel", KERNEL_VERSION)
         if not args:
             return "Linux"
         if "-a" in args:
-            return f"Linux {HOSTNAME} {KERNEL_VERSION} #1 SMP PREEMPT_DYNAMIC x86_64 x86_64 x86_64 GNU/Linux"
+            return f"Linux {hostname} {kernel} #1 SMP PREEMPT_DYNAMIC x86_64 x86_64 x86_64 GNU/Linux"
         if "-r" in args:
-            return KERNEL_VERSION
+            return kernel
         if "-n" in args:
-            return HOSTNAME
+            return hostname
         return "Linux"
 
     def _cmd_id(self, args: list) -> str:
@@ -896,6 +923,97 @@ class CommandHandler:
         if url and not url.startswith("-"):
             self._exfil_urls.append(url)
             logger.warning(f"[EXFIL ATTEMPT] Attacker tried to reach: {url}")
+
+    # ──────────────────────────────────────────────
+    # Lateral Movement commands
+    # ──────────────────────────────────────────────
+
+    def _cmd_ssh(self, args: list) -> str:
+        """Lateral movement trap — fake SSH into internal network nodes."""
+        if not args:
+            return "usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] destination"
+
+        # Parse target: ssh user@host, ssh host, ssh -p 22 host
+        target = None
+        port = "22"
+        i = 0
+        while i < len(args):
+            if args[i] == "-p" and i + 1 < len(args):
+                port = args[i + 1]
+                i += 2
+            elif args[i].startswith("-"):
+                i += 1
+            else:
+                target = args[i]
+                i += 1
+
+        if not target:
+            return "ssh: missing destination"
+
+        # Try to resolve to an internal node
+        node_name = resolve_target(target)
+        if node_name is None:
+            return f"ssh: connect to host {target} port {port}: Connection timed out"
+
+        node = get_node_info(node_name)
+        if node is None:
+            return f"ssh: connect to host {target} port {port}: Connection refused"
+
+        # Build a new filesystem for this node
+        new_fs = build_node_filesystem(node_name)
+
+        # Push current state onto the stack
+        self._node_stack.append((self.current_hostname, self.fs))
+
+        # Switch to the new node
+        self.fs = new_fs
+        self._current_node = node_name
+        self.current_hostname = node["hostname"]
+        self._is_root = False  # Reset root on new node
+
+        logger.warning(f"[LATERAL MOVEMENT] Attacker pivoted to {node_name} ({node['ip']})")
+
+        username = node["username"]
+        return (
+            f"{username}@{node['ip']}'s password: \n"
+            f"Welcome to {node['os']} ({node['kernel']})\n"
+            f"Last login: {datetime.now().strftime('%a %b %d %H:%M:%S %Y')} from 10.0.1.1\n"
+            f"\n * System: {node['role']}\n"
+            f" * Services: {', '.join(node['services'])}\n"
+        )
+
+    def _cmd_scp(self, args: list) -> str:
+        """Log SCP exfiltration attempts."""
+        target = " ".join(args)
+        logger.warning(f"[SCP EXFIL] Attacker attempted: scp {target}")
+        return f"scp: Connection timed out"
+
+    def _cmd_nmap(self, args: list) -> str:
+        """Fake nmap scan showing internal network nodes."""
+        target = args[-1] if args else "10.0.1.0/24"
+        lines = [
+            f"Starting Nmap 7.94 ( https://nmap.org ) at {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"Nmap scan report for {target}",
+        ]
+        for name, node in NETWORK_NODES.items():
+            lines.append(f"\nHost {node['ip']} ({name}) is up (0.00{random.randint(1,9)}s latency).")
+            lines.append("PORT     STATE SERVICE")
+            if "sshd" in node["services"]:
+                lines.append("22/tcp   open  ssh")
+            if "mysql" in node["services"]:
+                lines.append("3306/tcp open  mysql")
+            if "nginx" in node["services"] or "node" in node["services"]:
+                lines.append("80/tcp   open  http")
+                lines.append("443/tcp  open  https")
+            if "grafana-server" in node["services"]:
+                lines.append("3000/tcp open  grafana")
+            if "prometheus" in node["services"]:
+                lines.append("9090/tcp open  prometheus")
+            if "redis-server" in node["services"]:
+                lines.append("6379/tcp open  redis")
+
+        lines.append(f"\nNmap done: {len(NETWORK_NODES)} IP addresses ({len(NETWORK_NODES)} hosts up) scanned in {random.uniform(2,8):.2f} seconds")
+        return "\n".join(lines)
 
     def _cmd_wget(self, args: list) -> str:
         url = next((a for a in args if not a.startswith("-")), "")
