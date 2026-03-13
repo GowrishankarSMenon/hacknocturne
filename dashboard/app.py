@@ -442,13 +442,17 @@ with tab4:
 
             # ─── Attacker Profile Card ───
             st.markdown("#### Attacker Profile")
-            client_sw = selected_session_obj.get('client_software', 'N/A') or 'N/A'
-            pw_used = selected_session_obj.get('password_used', 'N/A') or 'N/A'
-            client_port = selected_session_obj.get('client_port', 'N/A') or 'N/A'
-            attacker_ip = selected_session_obj.get('client_ip', 'N/A')
 
-            # Geo lookup for the profile card
-            geo = lookup_ip(attacker_ip) if attacker_ip != 'N/A' else None
+            # Get fingerprint data from the session record
+            raw_ip = selected_session_obj.get('client_ip', '—')
+            client_sw = selected_session_obj.get('client_software') or '—'
+            pw_used = selected_session_obj.get('password_used') or '—'
+            client_port = selected_session_obj.get('client_port') or '—'
+
+            # Geo lookup — resolves public IP for private/local connections
+            geo = lookup_ip(raw_ip) if raw_ip != '—' else None
+            # Use the resolved public IP from geo (handles 127.0.0.1 → real public IP)
+            attacker_ip = geo.get('query', raw_ip) if geo else raw_ip
             geo_city = geo.get('city', 'Unknown') if geo else 'Unknown'
             geo_country = geo.get('country', 'Unknown') if geo else 'Unknown'
             geo_isp = geo.get('isp', 'Unknown') if geo else 'Unknown'
