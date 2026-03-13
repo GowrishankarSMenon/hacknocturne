@@ -97,6 +97,8 @@ class CommandHandler:
             "ssh": self._cmd_ssh,
             "scp": self._cmd_scp,
             "nmap": self._cmd_nmap,
+            "arp": self._cmd_arp,
+            "ip": self._cmd_ip,
         }
 
         # Session state
@@ -914,7 +916,8 @@ class CommandHandler:
             "tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\n"
             "tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN\n"
             "tcp        0      0 127.0.0.1:3306          0.0.0.0:*               LISTEN\n"
-            "tcp        0      0 10.0.2.15:22            10.0.2.2:54312          ESTABLISHED\n"
+            "tcp        0    184 10.0.1.1:48210          10.0.1.50:3306          ESTABLISHED\n"
+            "tcp        0      0 10.0.1.1:22             10.0.1.51:58934         ESTABLISHED\n"
             "tcp6       0      0 :::443                  :::*                    LISTEN\n"
             "udp        0      0 0.0.0.0:68              0.0.0.0:*"
         )
@@ -924,9 +927,43 @@ class CommandHandler:
             "Netid  State   Recv-Q  Send-Q    Local Address:Port     Peer Address:Port\n"
             "tcp    LISTEN  0       128       0.0.0.0:22              0.0.0.0:*\n"
             "tcp    LISTEN  0       511       0.0.0.0:80              0.0.0.0:*\n"
-            "tcp    ESTAB   0       0         10.0.2.15:22            10.0.2.2:54312\n"
+            "tcp    ESTAB   0       0         10.0.1.1:48210          10.0.1.50:3306\n"
             "tcp    LISTEN  0       128       [::]:443                [::]:*"
         )
+
+    def _cmd_arp(self, args: list) -> str:
+        """ARP table — reveals all 4 internal nodes as live neighbors."""
+        return (
+            "Address                  HWtype  HWaddress           Flags Mask  Iface\n"
+            "10.0.1.50                ether   52:54:00:1a:2b:3c   C           eth0\n"
+            "10.0.1.51                ether   52:54:00:2b:3c:4d   C           eth0\n"
+            "10.0.1.52                ether   52:54:00:3c:4d:5e   C           eth0\n"
+            "10.0.1.53                ether   52:54:00:4d:5e:6f   C           eth0\n"
+            "_gateway                 ether   52:54:00:12:35:02   C           eth0"
+        )
+
+    def _cmd_ip(self, args: list) -> str:
+        """ip command — show routes/neighbors revealing internal subnet."""
+        if args and args[0] in ("neigh", "neighbour", "n"):
+            return (
+                "10.0.1.50 dev eth0 lladdr 52:54:00:1a:2b:3c REACHABLE\n"
+                "10.0.1.51 dev eth0 lladdr 52:54:00:2b:3c:4d REACHABLE\n"
+                "10.0.1.52 dev eth0 lladdr 52:54:00:3c:4d:5e STALE\n"
+                "10.0.1.53 dev eth0 lladdr 52:54:00:4d:5e:6f STALE"
+            )
+        if args and args[0] in ("route", "r"):
+            return (
+                "default via 10.0.1.1 dev eth0 proto dhcp\n"
+                "10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.10"
+            )
+        if args and args[0] in ("addr", "a", "address"):
+            return (
+                "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536\n"
+                "    inet 127.0.0.1/8 scope host lo\n"
+                "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+                "    inet 10.0.1.10/24 brd 10.0.1.255 scope global eth0"
+            )
+        return "Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }"
 
     def _cmd_ping(self, args: list) -> str:
         if not args:

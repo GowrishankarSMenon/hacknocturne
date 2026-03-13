@@ -121,8 +121,20 @@ class VirtualFileSystem:
         etc.add_child(FSNode("passwd", "file", permissions="rw-r--r--", owner="root", group="root", size=1847,
             content="root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\nsys:x:3:3:sys:/dev:/usr/sbin/nologin\nsync:x:4:65534:sync:/bin:/bin/sync\ngames:x:5:60:games:/usr/games:/usr/sbin/nologin\nman:x:6:12:man:/var/cache/man:/usr/sbin/nologin\nlp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin\nmail:x:8:8:mail:/var/mail:/usr/sbin/nologin\nnews:x:9:9:news:/var/spool/news:/usr/sbin/nologin\nuser:x:1000:1000:user:/home/user:/bin/bash\n"))
         etc.add_child(FSNode("shadow", "file", content="", permissions="rw-------", owner="root", group="shadow", size=1203))
-        etc.add_child(FSNode("hosts", "file", permissions="rw-r--r--", owner="root", group="root", size=221,
-            content="127.0.0.1\tlocalhost\n127.0.1.1\tghostnet\n\n# The following lines are desirable for IPv6 capable hosts\n::1     ip6-localhost ip6-loopback\nfe00::0 ip6-localnet\nff00::0 ip6-mcastprefix\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\n"))
+        etc.add_child(FSNode("hosts", "file", permissions="rw-r--r--", owner="root", group="root", size=420,
+            content=(
+                "127.0.0.1\tlocalhost\n"
+                "127.0.1.1\taeroghost\n\n"
+                "# Internal network\n"
+                "10.0.1.50\tprod-db-01 prod-db-01.internal\n"
+                "10.0.1.51\tdev-api-02 dev-api-02.internal\n"
+                "10.0.1.52\tmonitoring monitoring.internal\n"
+                "10.0.1.53\tbackup-srv backup-srv.internal\n\n"
+                "# IPv6\n"
+                "::1     ip6-localhost ip6-loopback\n"
+                "fe00::0 ip6-localnet\n"
+                "ff02::1 ip6-allnodes\n"
+            )))
         etc.add_child(FSNode("os-release", "file", permissions="rw-r--r--", owner="root", group="root", size=393,
             content='PRETTY_NAME="Ubuntu 22.04.3 LTS"\nNAME="Ubuntu"\nVERSION_ID="22.04"\nVERSION="22.04.3 LTS (Jammy Jellyfish)"\nVERSION_CODENAME=jammy\nID=ubuntu\nID_LIKE=debian\nHOME_URL="https://www.ubuntu.com/"\nSUPPORT_URL="https://help.ubuntu.com/"\nBUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"\nPRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"\nUBUNTU_CODENAME=jammy\n'))
         etc.add_child(FSNode("resolv.conf", "file", content="nameserver 8.8.8.8\nnameserver 8.8.4.4\n", permissions="rw-r--r--", owner="root", group="root", size=50))
@@ -163,10 +175,35 @@ class VirtualFileSystem:
         user_home.add_child(FSNode(".bashrc", "file", owner="user", group="user", permissions="rw-r--r--", size=3771,
             content='# ~/.bashrc: executed by bash(1) for non-login shells.\n\n# If not running interactively, don\'t do anything\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n\n# append to the history file\nshopt -s histappend\n\nHISTSIZE=1000\nHISTFILESIZE=2000\n\n# check the window size after each command\nshopt -s checkwinsize\n\n# set a fancy prompt\nPS1=\'${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ \'\n\n# enable color support of ls\nalias ls=\'ls --color=auto\'\nalias ll=\'ls -alF\'\nalias la=\'ls -A\'\nalias l=\'ls -CF\'\n'))
         user_home.add_child(FSNode(".bash_history", "file", owner="user", group="user", permissions="rw-------", size=2048,
-            content="sudo apt update\nsudo apt upgrade -y\nls -la\ncd Documents\ncat notes.txt\npwd\nssh admin@192.168.1.1\npython3 script.py\nnmap -sV 10.0.0.0/24\ncurl https://api.example.com/data\nhistory\nwhoami\nifconfig\nnetstat -tlnp\n"))
-        user_home.add_child(FSNode(".profile", "file", owner="user", group="user", permissions="rw-r--r--", size=807,
-            content='# ~/.profile: executed by the command interpreter for login shells.\n\nif [ -n "$BASH_VERSION" ]; then\n    if [ -f "$HOME/.bashrc" ]; then\n        . "$HOME/.bashrc"\n    fi\nfi\n\nif [ -d "$HOME/bin" ] ; then\n    PATH="$HOME/bin:$PATH"\nfi\n'))
-        user_home.add_child(FSNode(".ssh", "dir", owner="user", group="user", permissions="rwx------"))
+            content=(
+                "sudo apt update\n"
+                "sudo apt upgrade -y\n"
+                "ls -la\n"
+                "cat /etc/hosts\n"
+                "ping prod-db-01\n"
+                "ssh dbadmin@10.0.1.50\n"
+                "mysql -h 10.0.1.50 -u root -p\n"
+                "ssh deploy@dev-api-02\n"
+                "cat /opt/api/.env.production\n"
+                "ssh monitor@10.0.1.52\n"
+                "ssh backup@backup-srv\n"
+                "scp backup@10.0.1.53:/backups/db/full_backup.sql /tmp/\n"
+                "nmap -sV 10.0.1.0/24\n"
+                "arp -a\n"
+                "netstat -tlnp\n"
+                "whoami\n"
+                "ifconfig\n"
+                "history\n"
+            )))
+        # SSH known_hosts — attackers find pivot targets by reading this
+        ssh_dir = user_home.add_child(FSNode(".ssh", "dir", owner="user", group="user", permissions="rwx------"))
+        ssh_dir.add_child(FSNode("known_hosts", "file", owner="user", group="user", permissions="rw-------",
+            content=(
+                "prod-db-01,10.0.1.50 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTIt...prod\n"
+                "dev-api-02,10.0.1.51 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTIt...dev\n"
+                "monitoring,10.0.1.52 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTIt...mon\n"
+                "backup-srv,10.0.1.53 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTIt...bak\n"
+            )))
 
     def _generate_binary_rubbish(self, size: int = 500) -> str:
         """Generate random unprintable ascii and hex bytes to simulate opening a binary file."""
