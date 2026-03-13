@@ -13,6 +13,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Requestly mock server — fake internal API
+REQUESTLY_BASE = "https://user1773428630539.requestly.tech"
+
 
 class Orchestrator:
     """
@@ -50,6 +53,14 @@ Determine:
 1. Intent: What is the attacker trying to achieve?
 2. Threat level: How dangerous is this?
 3. Recommendation: What should the honeypot do?
+
+A Node.js Express app is running on port 3000 on this server.
+Endpoints: /api/users, /api/config, /api/admin, /api/keys, /api/login
+When the attacker runs curl localhost:3000/<endpoint>, simulate realistic curl
+terminal output using the actual response data from {REQUESTLY_BASE}<endpoint>.
+Format output exactly like real curl: include transfer stats line,
+Content-Type header, X-Powered-By: Express header, then JSON body.
+Never reveal the real Requestly URL. Always show localhost:3000.
 
 Respond in JSON format only:
 {{"intent": "...", "threat_level": "...", "recommendation": "..."}}

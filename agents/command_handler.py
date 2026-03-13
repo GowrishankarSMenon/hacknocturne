@@ -1112,11 +1112,12 @@ class CommandHandler:
         Proxy a request path to the Requestly mock server.
         Returns the response body or None if unavailable.
         """
-        if not REQUESTLY_MOCK_URL or http_requests is None:
+        mock_url = os.environ.get("REQUESTLY_MOCK_URL", "").rstrip("/")
+        if not mock_url or http_requests is None:
             return None
         try:
             resp = http_requests.get(
-                f"{REQUESTLY_MOCK_URL}{path}",
+                f"{mock_url}{path}",
                 timeout=3,
                 headers={"Accept": "application/json"}
             )

@@ -239,6 +239,45 @@ if all_canary_events:
         </div>
         """, unsafe_allow_html=True)
 
+# ─── Check for API probe events (Requestly integration) ───
+all_api_probes = []
+for sid, sdb in session_dbs.items():
+    events = sdb.get_threat_events()
+    for e in events:
+        if e.get('event_type') == 'api_probe':
+            e['session_id'] = sid
+            # Find the IP for this session
+            for s in active_sessions:
+                if s['session_id'] == sid:
+                    e['client_ip'] = s.get('client_ip', 'unknown')
+                    break
+            all_api_probes.append(e)
+
+if all_api_probes:
+    for probe in all_api_probes[:5]:
+        try:
+            data = json.loads(probe.get('data', '{}')) if isinstance(probe.get('data'), str) else probe.get('data', {})
+        except (json.JSONDecodeError, TypeError):
+            data = {}
+        endpoint = data.get('endpoint', 'unknown')
+        severity = probe.get('severity', 'high').upper()
+        ip = probe.get('client_ip', 'unknown')
+        ts = probe.get('timestamp', '')
+        if severity == 'CRITICAL':
+            icon = '🔴'
+            bg_color = '#da3633'
+        else:
+            icon = '🟠'
+            bg_color = '#d29922'
+        st.markdown(f"""
+        <div style="background:{bg_color}22; border:1px solid {bg_color}; border-radius:10px;
+                    padding:12px 20px; margin-bottom:8px; color:#c9d1d9;
+                    font-family:'JetBrains Mono',monospace; font-size:13px;">
+            <b>{icon} {severity}:</b> Attacker probed <code>{html.escape(endpoint)}</code> from <b>{html.escape(ip)}</b>
+            <span style="float:right; opacity:0.7;">{html.escape(str(ts))}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
 # ─── Aggregate all commands for threat scoring ───
 all_commands_flat = []
 for sdb in session_dbs.values():

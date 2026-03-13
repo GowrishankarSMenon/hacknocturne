@@ -165,6 +165,29 @@ class VirtualFileSystem:
         # Inject dotfiles LAST — guarantees they can't be overwritten by themed generation
         self._inject_dotfiles(user_home)
 
+        # /var/www/app — fake internal Node.js API (Requestly integration bait)
+        var_www = var.add_child(FSNode("www", "dir", permissions="rwxr-xr-x", owner="root", group="root"))
+        var_app = var_www.add_child(FSNode("app", "dir", permissions="rwxr-xr-x", owner="www-data", group="www-data"))
+        var_app.add_child(FSNode(".env", "file", owner="www-data", group="www-data", permissions="rw-------", size=142,
+            content=(
+                "NODE_ENV=production\n"
+                "PORT=3000\n"
+                "DB_HOST=10.0.1.10\n"
+                "DB_PASS=Pr0d@MySQL#2024!\n"
+                "API_BASE=http://localhost:3000\n"
+                "JWT_SECRET=hs256-prod-secret-do-not-share\n"
+            )))
+        var_app.add_child(FSNode("README.md", "file", owner="www-data", group="www-data", permissions="rw-r--r--", size=112,
+            content=(
+                "# FinPay Internal API v2.1\n"
+                "Running on port 3000\n\n"
+                "GET  /api/users\n"
+                "GET  /api/config\n"
+                "GET  /api/admin\n"
+                "GET  /api/keys\n"
+                "POST /api/login\n"
+            )))
+
         return root
 
     def _inject_dotfiles(self, user_home: FSNode):

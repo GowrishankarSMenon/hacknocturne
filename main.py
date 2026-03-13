@@ -330,6 +330,29 @@ class GhostNetHoneypot:
 
             logger.info(f"[{session_id}] Command: {command[:50]} ({execution_time}ms)")
 
+            # ─── API Probe Detection (Requestly integration) ───
+            if "curl" in command and any(
+                ep in command for ep in
+                ["/api/users", "/api/config", "/api/admin", "/api/keys", "/api/login"]
+            ):
+                for ep in ["/api/users", "/api/config", "/api/admin",
+                           "/api/keys", "/api/login"]:
+                    if ep in command:
+                        severity = "critical" if ep == "/api/keys" else "high"
+                        session_db.log_threat_event(
+                            "api_probe",
+                            severity,
+                            {
+                                "endpoint": ep,
+                                "command": command,
+                                "message": f"Attacker probed internal API endpoint {ep}",
+                            }
+                        )
+                        logger.warning(
+                            f"🔴 [{session_id}] API PROBE [{severity.upper()}]: {ep} from {client_ip}"
+                        )
+                        break  # Only log the first matched endpoint per command
+
             # Breadcrumb pipeline (background thread — non-blocking)
             # NOTE: increment_cmd moved INSIDE the pipeline thread (Bug 2 fix)
             if self.breadcrumb_agent:
