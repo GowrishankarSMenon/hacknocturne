@@ -576,7 +576,13 @@ with tab4:
             # ─── GIA Alerts ───
             gia_warnings = [e for e in threat_events if e.get('event_type') == 'gia_warning']
             if gia_warnings:
-                st.markdown("**GIA Alerts:**")
+                gia_header_col, gia_clear_col = st.columns([4, 1])
+                with gia_header_col:
+                    st.markdown("**GIA Alerts:**")
+                with gia_clear_col:
+                    if st.button("🗑️ Clear", key=f"clear_gia_{sid}"):
+                        sdb.clear_threat_events(event_type="gia_warning")
+                        st.rerun()
                 for warning in gia_warnings:
                     try:
                         data = json.loads(warning.get('data', '{}')) if isinstance(warning.get('data'), str) else warning.get('data', {})
@@ -625,7 +631,13 @@ with tab4:
 
     # ─── Random Segment Assessment & Fingerprint Alerts (global, not per-session) ───
     st.divider()
-    st.markdown("#### 🔥 Random Segment Assessment & Fingerprint Alerts")
+    rsa_header_col, rsa_clear_col = st.columns([4, 1])
+    with rsa_header_col:
+        st.markdown("#### 🔥 Random Segment Assessment & Fingerprint Alerts")
+    with rsa_clear_col:
+        if st.button("🗑️ Clear All", key="clear_rsa_alerts"):
+            db.clear_rsa_alerts()
+            st.rerun()
     rsa_alerts = db.get_rsa_alerts()
     if rsa_alerts:
         for alert in rsa_alerts:

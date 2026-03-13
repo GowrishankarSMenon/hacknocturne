@@ -111,6 +111,29 @@ class CommandHandler:
         self._current_node = None # Current lateral node name (None = honeypot root)
         self.current_hostname = HOSTNAME  # Dynamic hostname for prompt
 
+    def get_completions(self, partial: str) -> list:
+        """
+        Return tab-completion candidates for a partial input string.
+        First token → command names.  Subsequent tokens → files/dirs in cwd.
+        """
+        tokens = partial.split()
+        # If partial ends with a space, the user is starting a NEW token (file arg)
+        completing_new_token = partial.endswith(" ")
+
+        if not tokens or (len(tokens) == 1 and not completing_new_token):
+            # Complete command names
+            prefix = tokens[0] if tokens else ""
+            return sorted(c for c in self._commands if c.startswith(prefix))
+        else:
+            # Complete filenames in cwd
+            file_prefix = "" if completing_new_token else tokens[-1]
+            entries = []
+            for name, node in self.fs.cwd.children.items():
+                if name.startswith(file_prefix):
+                    suffix = "/" if node.node_type == "dir" else ""
+                    entries.append(name + suffix)
+            return sorted(entries)
+
     def execute(self, command_str: str) -> str:
         """
         Parse and execute a command string. Returns the output.

@@ -30,9 +30,10 @@ AeroGhost is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Li
 2. **Watches their every move** — logging commands, keystroke timings, and detecting intent.
 3. **Fingerprints them** — computing SSH HASSH fingerprints for cross-IP campaign tracking.
 4. **Detects anomalies** — identifying Random Segment Assessment attempts (burst & slow-drip) and automated bots vs. human typists.
-5. **Adapts in real-time** — planting fake "breadcrumb" files tailored to what the attacker is hunting for.
-6. **Trips canary wires** — alerting you instantly when the attacker interacts with planted bait.
-7. **Generates actionable intelligence** — providing interactive dashboards, threat reports, geo-maps, and attack timelines.
+5. **Simulates Internal Networks** — trapping attackers in endless lateral movement loops within fake subnets.
+6. **Adapts in real-time** — planting fake "breadcrumb" files tailored to what the attacker is hunting for.
+7. **Trips canary wires** — alerting you instantly when the attacker interacts with planted bait.
+8. **Generates actionable intelligence** — providing interactive dashboards, threat reports, geo-maps, and attack timelines.
 
 > **Hackathon Project** built for [HackNocturne] by [@GowrishankarSMenon](https://github.com/GowrishankarSMenon)
 
@@ -52,7 +53,7 @@ AeroGhost is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Li
 │                          ┌──────────┼──────────┐                  │
 │                          ▼          ▼          ▼                  │
 │              ┌─────────────────┐ ┌─────────┐ ┌──────────────────┐ │
-│              │ Command Handler │ │ Random Segment Assessment &  │ │ Breadcrumb Agent │ │
+│              │ Command Handler │ │ RSA &     │ │ Breadcrumb Agent │ │
 │              │ (50+ commands)  │ │ HASSH   │ │ (AI Deception)   │ │
 │              └────────┬────────┘ └─────────┘ └────────┬─────────┘ │
 │                       │                     │                     │
@@ -79,9 +80,16 @@ AeroGhost is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Li
 
 ### 🖥️ Realistic SSH Shell
 - Simulates **Ubuntu 22.04 LTS** (`uname`, `cat /etc/os-release`).
-- 50+ working commands: `ls`, `cd`, `cat`, `grep`, `find`, `ps`, `netstat`, `curl`, `wget`, `history`, `sudo`, `ssh`, and more.
+- 50+ working commands: `ls`, `cd`, `cat`, `grep`, `find`, `ps`, `netstat`, `curl`, `wget`, `history`, `sudo`, `ssh`, `nmap` and more.
 - Per-session isolated **virtual filesystem** with realistic directory trees (`Documents`, `Downloads`, `.ssh`, `/etc/passwd`, `/var/log/`, etc.).
 - Fully functional piped commands, background jobs, and subshells.
+
+### 🕸️ Endless Lateral Movement Trap
+AeroGhost contains an **internal network simulator** (`agents/network_sim.py`) that traps attackers trying to pivot to other machines:
+- **Fake `nmap` scans** will reveal an internal subnet (`10.0.1.0/24`) with machines like `prod-db-01`, `dev-api-02`, and `backup-srv`.
+- Attackers can **`ssh` into these fake nodes** directly from the honeypot shell.
+- Each fake node has its own isolated OS simulating its role (e.g., MySQL databases, NodeJS APIs, Grafana monitoring instances, and backup servers with fake PII, source code, and configurations).
+- The prompt dynamically updates to match the pivot node (e.g., `dbadmin@prod-db-01:~$`).
 
 ### 🎣 AI-Generated Adaptive Breadcrumbs
 The core deception engine detects **attacker intent** and plants convincing fake files as canary tripwires:
@@ -114,10 +122,10 @@ A background watchdog that monitors sessions every 5 seconds for anomalies:
 
 #### HASSH Fingerprinting
 - Computes MD5 hash of SSH client algorithm preferences during the handshake.
-- Detects known attack tools out-of-the-box (OpenSSH, PuTTY, Hydra, Nmap, Go SSH).
+- Detects known attack tools out-of-the-box (OpenSSH, PuTTY, Hydra, Nmap, Metasploit, AsyncSSH, Masscan-SSH, Go SSH).
 - **Cross-IP Correlation:** Automatically flags if the exact same attacker client tries to connect from multiple IP addresses.
 
-#### Random Segment Assessment Detection & Triage
+#### Random Segment Assessment (RSA) Detection & Triage
 - Detects **Volumetric Bursts** (e.g., ≥10 connections in 30 seconds).
 - Detects **Slow-Drip Attacks** designed to evade standard rate limits (e.g., sequential gaps < 2s).
 - Employs a complex **Similarity Scoring** algorithm (0-100) weighing HASSH matches, timing regularity, and username repetition.
@@ -191,7 +199,7 @@ ssh user@localhost -p 2222
 # Password: anything (all passwords accepted)
 ```
 
-You can also use the included Random Segment Assessment testing tool to test defense triggers:
+You can also use the included RSA testing tool to test defense triggers:
 ```bash
 python rsa_tester.py burst
 python rsa_tester.py drip
@@ -205,25 +213,26 @@ python rsa_tester.py drip
 ghostnet/
 │
 ├── main.py                     # Main orchestrator — wires everything together
-├── rsa_tester.py              # Utility for testing Burst & Slow-Drip Random Segment Assessment attacks
+├── rsa_tester.py               # Utility for testing Burst & Slow-Drip RSA attacks
 ├── requirements.txt            # Python dependencies
 ├── start.bat / stop.bat        # Windows convenience launchers
 │
 ├── agents/
-│   ├── command_handler.py      # 50+ shell command simulations
+│   ├── command_handler.py      # 50+ shell command simulations (incl ssh pivot)
 │   ├── breadcrumbs.py          # AI deception engine (intent → fake files)
 │   ├── intelligence_agency.py  # GIA background watchdog
 │   ├── geo_lookup.py           # IP geolocation via ip-api.com
 │   ├── os_simulator.py         # Groq-powered AI response fallback
-│   ├── rsa_detector.py        # Anomaly detection for bursts & slow-drips
+│   ├── rsa_detector.py         # Anomaly detection for bursts & slow-drips
 │   ├── hassh_fingerprinter.py  # SSH fingerprinting & cross-IP tracking
-│   └── timing_analyzer.py      # Bot vs human keystroke pattern analysis
+│   ├── timing_analyzer.py      # Bot vs human keystroke pattern analysis
+│   └── network_sim.py          # Simulated internal subnet for lateral moves
 │
 ├── ssh_listener/
 │   └── server.py               # Paramiko SSH server (AeroGhostSSHServer)
 │
 ├── state_manager/
-│   ├── database.py             # Global indexing, real-time metrics, HASSH/Random Segment Assessment state
+│   ├── database.py             # Global indexing, real-time metrics, HASSH/RSA state
 │   └── file_system.py          # Isolated VirtualFileSystem tree (FSNode)
 │
 ├── dashboard/
@@ -241,13 +250,13 @@ ghostnet/
 ## Key Design Decisions
 
 ### Per-Session SQLite Isolation
-Each attacker gets **their own SQLite database** at `logs/sessions/<session_id>.db`. This prevents cross-session data leakage and race conditions. Global data (HASSH, RSA Alerts) remains in `logs/ghostnet.db`.
+Each attacker gets **their own SQLite database** at `logs/sessions/<session_id>.db`. This prevents cross-session data leakage and race conditions. Global data (HASSH, RSA alerts) remains in `logs/ghostnet.db`.
+
+### Local Network Inception
+By keeping the attacker entirely contained within the `node_stack` of the `command_handler.py`, AeroGhost can simulate extensive multi-jump lateral movement architectures without ever actually deploying secondary containers or VMs.
 
 ### Async Breadcrumb Pipeline
 The deception pipeline runs in a **background thread** with a 3–10 second delay so the attacker's terminal feels instant and files don't appear suspiciously fast.
-
-### Security and Fingerprinting First
-By tracking the exact fingerprint (HASSH) of the SSH negotiation before the shell even spawns, AeroGhost correlates tools and actors even if they hide behind different proxies and IP spaces.
 
 ---
 
@@ -256,6 +265,7 @@ By tracking the exact fingerprint (HASSH) of the SSH negotiation before the shel
 | Component | Technology |
 |---|---|
 | SSH Server | `paramiko` |
+| Fast API Engine | `fastapi` + `uvicorn` | 
 | AI / LLM | `groq` (llama-3.3-70b-versatile) |
 | Dashboard | `streamlit` + `streamlit-autorefresh` |
 | Visualizations | `plotly` |

@@ -68,7 +68,8 @@ class SSHServerSocket:
     def __init__(self, host="0.0.0.0", port=2222, command_handler=None, 
                  live_feed_callback=None, fingerprint_callback=None, 
                  keystroke_callback=None, prompt_callback=None,
-                 hassh_callback=None, connection_callback=None):
+                 hassh_callback=None, connection_callback=None,
+                 autocomplete_callback=None):
         self.host = host
         self.port = port
         self.command_handler = command_handler
@@ -76,6 +77,7 @@ class SSHServerSocket:
         self.fingerprint_callback = fingerprint_callback
         self.keystroke_callback = keystroke_callback
         self.prompt_callback = prompt_callback
+        self.autocomplete_callback = autocomplete_callback  # (session_id, buffer) -> list
         self.hassh_callback = hassh_callback          # (transport, session_id, client_ip, username)
         self.connection_callback = connection_callback  # (client_ip) — for RSA tracking
         self.running = False
@@ -289,6 +291,32 @@ class SSHServerSocket:
                             channel.send("logout\r\n")
                             return
                     
+                    # Handle Tab (autocomplete)
+                    elif byte == 0x09:
+                        if self.autocomplete_callback:
+                            try:
+                                completions = self.autocomplete_callback(session_id, command_buffer)
+                                if completions and len(completions) == 1:
+                                    # Unique match — complete the word
+                                    match = completions[0]
+                                    tokens = command_buffer.split()
+                                    if command_buffer.endswith(" ") or not tokens:
+                                        suffix = match
+                                    else:
+                                        partial = tokens[-1]
+                                        suffix = match[len(partial):]
+                                    command_buffer += suffix + " "
+                                    channel.send(suffix + " ")
+                                    if self.live_feed_callback:
+                                        self.live_feed_callback(session_id, command_buffer)
+                                elif completions and len(completions) > 1:
+                                    # Multiple matches — show options
+                                    display = "  ".join(completions)
+                                    channel.send(f"\r\n{display}\r\n")
+                                    channel.send(self._get_prompt(session_id) + command_buffer)
+                            except Exception:
+                                pass  # Silently ignore autocomplete errors
+
                     # Handle regular printable characters
                     elif 32 <= byte < 127:
                         command_buffer += char

@@ -35,6 +35,7 @@ from agents.breadcrumbs import BreadcrumbAgent
 from agents.timing_analyzer import TimingAnalyzer
 from agents.hassh_fingerprinter import HASSHFingerprinter
 from agents.rsa_detector import RSADetector
+from agents.report_generator import SessionReportGenerator
 from state_manager.database import GhostNetDatabase, SessionDatabase
 from state_manager.file_system import VirtualFileSystem, FSNode
 from agents.intelligence_agency import GeneralIntelligenceAgency
@@ -87,10 +88,13 @@ class GhostNetHoneypot:
         self.rsa_detector = RSADetector(self.database)
         logger.info("✓ RSA Detector initialized")
 
-        # General Intelligence Agency — session watchdog
         self.gia = GeneralIntelligenceAgency(self.active_sessions, self.database)
         self.gia.start()
         logger.info("GIA (General Intelligence Agency) initialized")
+
+        # Session report generator
+        self.report_generator = SessionReportGenerator()
+        logger.info("✓ Session Report Generator initialized")
 
         # SSH server
         self.ssh_server = SSHServerSocket(
@@ -103,6 +107,7 @@ class GhostNetHoneypot:
             prompt_callback=self._get_prompt,
             hassh_callback=self._on_hassh_captured,
             connection_callback=self._on_connection,
+            autocomplete_callback=self._autocomplete,
         )
 
         # Buffer for fingerprint data (arrives before session DB row exists)
@@ -167,6 +172,15 @@ class GhostNetHoneypot:
                 f"🔥 Random Segment Assessment ALERT [{alert['type']}] from {client_ip} — "
                 f"Severity: {alert['severity']} | Score: {alert['similarity_score']}/100"
             )
+
+    def _autocomplete(self, session_id: str, buffer: str) -> list:
+        """Callback: return tab-completion candidates for the current buffer."""
+        session = self.active_sessions.get(session_id)
+        if session:
+            handler = session.get('handler')
+            if handler:
+                return handler.get_completions(buffer)
+        return []
 
     def _update_live_typing(self, session_id: str, buffer: str):
         """Callback for live keystroke feed."""
@@ -264,6 +278,19 @@ class GhostNetHoneypot:
 
             # Handle exit
             if command.lower() in ["exit", "quit"]:
+                # Generate PDF report before closing the session
+                try:
+                    session = self.active_sessions.get(session_id)
+                    if session:
+                        session_meta = self.database.get_session(session_id) or {}
+                        session_meta["client_ip"] = session.get("client_ip", "unknown")
+                        self.report_generator.generate(
+                            session_id, session_meta,
+                            session["session_db"], self.database
+                        )
+                except Exception as e:
+                    logger.error(f"Report generation failed: {e}")
+
                 self.database.close_session(session_id)
                 self.database.clear_live_typing(session_id)
                 self.gia.cleanup_session(session_id)
