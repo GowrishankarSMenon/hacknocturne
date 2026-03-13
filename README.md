@@ -22,15 +22,17 @@
 
 ---
 
-## What Is GhostNet?
+## What Is GhostNet/AeroGhost?
 
-GhostNet is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Linux server. When an attacker connects, instead of blocking them, GhostNet:
+AeroGhost is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Linux server. When an attacker connects, instead of blocking them, AeroGhost:
 
-1. **Lets them in** — with a convincing fake Ubuntu shell
-2. **Watches their every move** — logging commands, detecting intent
-3. **Adapts in real-time** — planting fake "breadcrumb" files tailored to what the attacker is hunting for
-4. **Trips canary wires** — alerts when the attacker interacts with planted bait
-5. **Generates intelligence** — threat reports, geo-maps, attack timelines
+1. **Lets them in** — with a convincing fake Ubuntu shell.
+2. **Watches their every move** — logging commands, keystroke timings, and detecting intent.
+3. **Fingerprints them** — computing SSH HASSH fingerprints for cross-IP campaign tracking.
+4. **Detects anomalies** — identifying Random Segment Assessment attempts (burst & slow-drip) and automated bots vs. human typists.
+5. **Adapts in real-time** — planting fake "breadcrumb" files tailored to what the attacker is hunting for.
+6. **Trips canary wires** — alerting you instantly when the attacker interacts with planted bait.
+7. **Generates actionable intelligence** — providing interactive dashboards, threat reports, geo-maps, and attack timelines.
 
 > **Hackathon Project** built for [HackNocturne] by [@GowrishankarSMenon](https://github.com/GowrishankarSMenon)
 
@@ -47,12 +49,12 @@ GhostNet is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Lin
 │  │  (Paramiko)  │───▶│         GhostNetHoneypot              │   │
 │  │  Port: 2222  │    └──────────────┬────────────────────────┘   │
 │  └──────────────┘                   │                             │
-│                          ┌──────────┴──────────┐                  │
-│                          ▼                     ▼                  │
-│              ┌─────────────────┐   ┌──────────────────┐          │
-│              │  Command Handler│   │  Breadcrumb Agent│          │
-│              │  (50+ commands) │   │  (AI Deception)  │          │
-│              └────────┬────────┘   └────────┬─────────┘          │
+│                          ┌──────────┼──────────┐                  │
+│                          ▼          ▼          ▼                  │
+│              ┌─────────────────┐ ┌─────────┐ ┌──────────────────┐ │
+│              │ Command Handler │ │ Random Segment Assessment &  │ │ Breadcrumb Agent │ │
+│              │ (50+ commands)  │ │ HASSH   │ │ (AI Deception)   │ │
+│              └────────┬────────┘ └─────────┘ └────────┬─────────┘ │
 │                       │                     │                     │
 │              ┌────────▼────────┐   ┌────────▼─────────┐          │
 │              │ Virtual FS Tree │   │  General Intel.  │          │
@@ -76,13 +78,13 @@ GhostNet is an **AI-powered SSH honeypot** that simulates a realistic Ubuntu Lin
 ## Feature Overview
 
 ### 🖥️ Realistic SSH Shell
-- Simulates **Ubuntu 22.04 LTS** (`uname`, `cat /etc/os-release`)
-- 50+ working commands: `ls`, `cd`, `cat`, `grep`, `find`, `ps`, `netstat`, `curl`, `wget`, `history`, `sudo`, `ssh`, and more
-- Per-session isolated **virtual filesystem** with realistic directory trees (Documents, Downloads, .ssh, /etc/passwd, /var/log/, etc.)
-- Shell prompt: `user@aeroghost:~$`
+- Simulates **Ubuntu 22.04 LTS** (`uname`, `cat /etc/os-release`).
+- 50+ working commands: `ls`, `cd`, `cat`, `grep`, `find`, `ps`, `netstat`, `curl`, `wget`, `history`, `sudo`, `ssh`, and more.
+- Per-session isolated **virtual filesystem** with realistic directory trees (`Documents`, `Downloads`, `.ssh`, `/etc/passwd`, `/var/log/`, etc.).
+- Fully functional piped commands, background jobs, and subshells.
 
 ### 🎣 AI-Generated Adaptive Breadcrumbs
-The core deception engine. Detects **attacker intent** and plants convincing fake files as canary tripwires:
+The core deception engine detects **attacker intent** and plants convincing fake files as canary tripwires:
 
 | Intent Detected | Planted File | Contains |
 |---|---|---|
@@ -92,36 +94,45 @@ The core deception engine. Detects **attacker intent** and plants convincing fak
 | `lateral_movement` | `vpn_connect.sh` | Fake internal VPN script |
 | `exfil_prep` | `backup_march2025.tar.gz` | Fake backup manifest |
 
-Files are planted **3–10 seconds after** the triggering command (so they look like they were always there) with realistic timestamps (5–60 days old).
-
-When the attacker opens a planted file → **CRITICAL ALERT** fires on the dashboard.
+Files are planted **3–10 seconds after** the triggering command (so they look like they were always there) with realistic timestamps (5–60 days old). When the attacker opens a planted file, a **CRITICAL ALERT** fires.
 
 ### 🕵️ General Intelligence Agency (GIA)
-A background watchdog that monitors sessions every 5 seconds for:
+A background watchdog that monitors sessions every 5 seconds for anomalies:
 
 | Check | What It Catches |
 |---|---|
-| 🤖 **Bot Detector** | Commands arriving < 200ms apart (automated scanner) |
-| 🔍 **Suspicion Scorer** | `ls` spam, timestamp checking (`stat`, `find -newer`) |
-| ⏰ **Realism Validator** | Breadcrumb files with too-recent timestamps |
-| 🧹 **Session Integrity** | Zombie sessions in DB not in memory |
+| 🌱 **Intent Progression** | Follows the attacker's path from recon to exfil |
+| 🔍 **Suspicion Scorer** | Detects `ls` spam, timestamp checking (`stat`, `find -newer`) |
+| ⏰ **Realism Validator** | Ensures breadcrumb files don't have unrealistic, too-recent timestamps |
+| 🧹 **Session Integrity** | Identifies and cleans zombie sessions |
+
+### 🤖 Advanced Threat Identification
+
+#### Bot vs. Human Detection
+- Real-time **TimingAnalyzer** evaluates keystroke latency to distinguish between automated scripts and human typists.
+- Fast, mathematically precise detection of scanning tools and bruteforce scripts.
+
+#### HASSH Fingerprinting
+- Computes MD5 hash of SSH client algorithm preferences during the handshake.
+- Detects known attack tools out-of-the-box (OpenSSH, PuTTY, Hydra, Nmap, Go SSH).
+- **Cross-IP Correlation:** Automatically flags if the exact same attacker client tries to connect from multiple IP addresses.
+
+#### Random Segment Assessment Detection & Triage
+- Detects **Volumetric Bursts** (e.g., ≥10 connections in 30 seconds).
+- Detects **Slow-Drip Attacks** designed to evade standard rate limits (e.g., sequential gaps < 2s).
+- Employs a complex **Similarity Scoring** algorithm (0-100) weighing HASSH matches, timing regularity, and username repetition.
+- Central **Cyber Team Action Panel** in the dashboard allows you to Monitor, Block, Quarantine, or Dismiss active attacks.
 
 ### 🗺️ Geo-Intelligence Map
-- IP geolocation of connected attackers via `ip-api.com`
-- Interactive **Folium dark map** with attacker markers
-- Pulsing red circles + popup with city, ISP, org, session ID
+- IP geolocation of connected attackers via `ip-api.com`.
+- Interactive **Folium dark map** with living metrics.
+- Pulsing red circles + popup with city, ISP, organization, and live session IDs.
 
-### 📊 Threat Score Engine
-Computes a **0–100 threat score** per session based on:
-- Volume of commands (up to 20 pts)
-- Dangerous keywords (`sudo`, `shadow`, `curl`, `nmap`, etc.) — up to 60 pts
-- Session duration (up to 20 pts)
-- Displayed as a **Plotly gauge chart**
-
-### 📈 Command Timeline
-Scatter-plot of all commands over time, color-coded:
-- 🔴 **Dangerous** — commands matching known threat patterns
-- 🟢 **Benign** — normal recon/exploration
+### 📊 Comprehensive Dashboard & Reporting
+- **Live Terminal & Keystrokes:** Watch the attackers type in real time.
+- **Timeline Scatter-Plot:** Visualize commands categorized as Dangerous (red) or Benign (green).
+- **Threat Score Engine:** Computes an aggregated Threat Score per session (0–100) using command volume, payload danger, and duration.
+- **Automated Threat Reports:** Gathers session data and queries Groq's LLM to generate a plain-English, SOC-ready summary of the attack.
 
 ---
 
@@ -131,10 +142,14 @@ Scatter-plot of all commands over time, color-coded:
 ```bash
 git clone https://github.com/GowrishankarSMenon/hacknocturne.git
 cd hacknocturne
+
+# Create and activate virtual environment
 python -m venv venv
 
 # Windows
 venv\Scripts\activate
+# Linux/macOS
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -143,7 +158,8 @@ pip install -r requirements.txt
 ### 2. Configure Environment
 ```bash
 # Copy the example .env
-copy .env.example .env   # Windows
+cp .env.example .env   # Linux/macOS
+copy .env.example .env # Windows
 ```
 
 Edit `.env`:
@@ -154,7 +170,7 @@ SSH_PORT=2222
 
 > **Note:** `GROQ_API_KEY` is optional. Without it, breadcrumbs use fallback templates and threat reports are unavailable. Everything else works fully.
 
-### 3. Run the Honeypot
+### 3. Run the System
 ```bash
 # Terminal 1 — SSH server
 python main.py
@@ -163,8 +179,8 @@ python main.py
 streamlit run dashboard/app.py
 ```
 
-Or use the provided batch files:
-```bash
+Or use the provided batch files (Windows):
+```cmd
 start.bat   # Starts both
 stop.bat    # Kills both
 ```
@@ -175,6 +191,12 @@ ssh user@localhost -p 2222
 # Password: anything (all passwords accepted)
 ```
 
+You can also use the included Random Segment Assessment testing tool to test defense triggers:
+```bash
+python rsa_tester.py burst
+python rsa_tester.py drip
+```
+
 ---
 
 ## Project Structure
@@ -183,6 +205,7 @@ ssh user@localhost -p 2222
 ghostnet/
 │
 ├── main.py                     # Main orchestrator — wires everything together
+├── rsa_tester.py              # Utility for testing Burst & Slow-Drip Random Segment Assessment attacks
 ├── requirements.txt            # Python dependencies
 ├── start.bat / stop.bat        # Windows convenience launchers
 │
@@ -191,77 +214,40 @@ ghostnet/
 │   ├── breadcrumbs.py          # AI deception engine (intent → fake files)
 │   ├── intelligence_agency.py  # GIA background watchdog
 │   ├── geo_lookup.py           # IP geolocation via ip-api.com
-│   └── os_simulator.py         # Groq-powered AI response fallback
+│   ├── os_simulator.py         # Groq-powered AI response fallback
+│   ├── rsa_detector.py        # Anomaly detection for bursts & slow-drips
+│   ├── hassh_fingerprinter.py  # SSH fingerprinting & cross-IP tracking
+│   └── timing_analyzer.py      # Bot vs human keystroke pattern analysis
 │
 ├── ssh_listener/
 │   └── server.py               # Paramiko SSH server (AeroGhostSSHServer)
 │
 ├── state_manager/
-│   ├── database.py             # GhostNetDatabase (session index) + SessionDatabase (per-session)
-│   └── file_system.py          # VirtualFileSystem tree (FSNode)
+│   ├── database.py             # Global indexing, real-time metrics, HASSH/Random Segment Assessment state
+│   └── file_system.py          # Isolated VirtualFileSystem tree (FSNode)
 │
 ├── dashboard/
-│   └── app.py                  # Streamlit dashboard (6 tabs)
+│   └── app.py                  # Extensive Streamlit dashboard (6 tabs)
 │
 └── logs/
     ├── ghostnet.log            # Main system log
-    ├── ghostnet.db             # Session index (SQLite)
+    ├── ghostnet.db             # Global tracking DB
     └── sessions/
-        └── <session_id>.db     # Per-session isolated database
+        └── <session_id>.db     # Per-session isolated databases
 ```
-
----
-
-## Dashboard Tabs
-
-| Tab | Description |
-|---|---|
-| **Live Terminal** | Real-time command output per session with live typing feed |
-| **Live Activity** | Scrollable command history across all sessions |
-| **Sessions** | Table of active/recent sessions with IP, username, command count, canary hits |
-| **Intelligence & GIA** | Threat gauge, command timeline, intent progression, canary status, GIA alerts, threat report |
-| **Geo-Intelligence** | Interactive world map of attacker origins |
-| **Analytics** | Session activity heatmap (hour × day of week), historical stats |
 
 ---
 
 ## Key Design Decisions
 
 ### Per-Session SQLite Isolation
-Each attacker gets **their own SQLite database** at `logs/sessions/<session_id>.db`. This prevents:
-- Cross-session data leakage
-- Race conditions between concurrent attackers
-- Compromise of one session's data affecting others
-
-```
-Session A → logs/sessions/abc123.db  (commands, intents, canaries)
-Session B → logs/sessions/def456.db  (completely isolated)
-Global   → logs/ghostnet.db          (session index only)
-```
+Each attacker gets **their own SQLite database** at `logs/sessions/<session_id>.db`. This prevents cross-session data leakage and race conditions. Global data (HASSH, RSA Alerts) remains in `logs/ghostnet.db`.
 
 ### Async Breadcrumb Pipeline
-The deception pipeline runs in a **background thread** with a 3–10 second delay so:
-- The attacker's terminal feels instant (no lag)
-- Files don't appear suspiciously fast after commands
-- A smart attacker won't notice the correlation
+The deception pipeline runs in a **background thread** with a 3–10 second delay so the attacker's terminal feels instant and files don't appear suspiciously fast.
 
-### Canary Tripwire Flow
-```
-Attacker types "cat .bash_history"
-       ↓
-BreadcrumbAgent detects: credential_hunt (confidence 0.85)
-       ↓ (background thread, 5s delay)
-Plants config.php with fake DB credentials
-Registers as canary in SessionDB
-       ↓
-Attacker types "cat config.php"
-       ↓
-CommandHandler.`_cmd_cat` checks canary registry → HIT
-       ↓
-SessionDB.trigger_canary() → logs threat_event
-       ↓
-Dashboard shows pulsing red ⚠️ CRITICAL ALERT
-```
+### Security and Fingerprinting First
+By tracking the exact fingerprint (HASSH) of the SSH negotiation before the shell even spawns, AeroGhost correlates tools and actors even if they hide behind different proxies and IP spaces.
 
 ---
 
@@ -275,50 +261,19 @@ Dashboard shows pulsing red ⚠️ CRITICAL ALERT
 | Visualizations | `plotly` |
 | Geo Map | `folium` + `streamlit-folium` |
 | Database | `sqlite3` (stdlib — no external DB needed) |
-| Geolocation | `ip-api.com` (free, no key required) |
 
 ---
 
 ## Testing
 
-### Run component tests
+Run component tests to ensure everything is initialized correctly:
 ```bash
 python test_components.py
-# Expected: 4 passed, 0 failed
+# Expected: All components passed
 
 python test_filesystem.py
 # Tests VirtualFileSystem, dotfiles, path resolution
 ```
-
-### Manual attack paths
-
-| Scenario | Commands | Expected Result |
-|---|---|---|
-| Credential Hunt | `cat .bash_history` → wait 10s → `ls` → `cat config.php` | CRITICAL alert on dashboard |
-| SSH Key Hunt | `ls .ssh` → `find / -name id_rsa` | `id_rsa` planted in `.ssh/` |
-| Lateral Movement | `cat /etc/hosts` → `ssh admin@10.0.0.5` | `vpn_connect.sh` planted |
-| Database Hunt | `cat .my.cnf` → `mysql` | `.my.cnf` planted |
-| Bot Detection | Paste 10 commands rapidly | GIA flags `bot_detected` in dashboard |
-| Suspicion Alert | Type `ls` 4+ times | GIA flags `ls_spam` |
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | Optional | Groq API key for AI intent detection and threat reports |
-| `SSH_PORT` | Optional | SSH server port (default: `2222`) |
-
----
-
-## Contributing
-
-Pull requests welcome. Key areas for improvement:
-- More command implementations in `command_handler.py`
-- Additional intent categories in `breadcrumbs.py`
-- More GIA checks in `intelligence_agency.py`
-- Enhanced dashboard analytics
 
 ---
 

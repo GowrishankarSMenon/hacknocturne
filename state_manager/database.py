@@ -63,9 +63,9 @@ class GhostNetDatabase:
         )
         """)
 
-        # DDoS alerts
+        # RSA Alerts
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ddos_alerts (
+        CREATE TABLE IF NOT EXISTS rsa_alerts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             client_ip TEXT,
             alert_type TEXT,
@@ -85,7 +85,7 @@ class GhostNetDatabase:
             action TEXT,
             operator TEXT DEFAULT 'system',
             timestamp TIMESTAMP,
-            FOREIGN KEY(alert_id) REFERENCES ddos_alerts(id)
+            FOREIGN KEY(alert_id) REFERENCES rsa_alerts(id)
         )
         """)
 
@@ -205,35 +205,35 @@ class GhostNetDatabase:
         conn.close()
         return [dict(row) for row in rows]
 
-    # ─── DDoS Alerts ───
+    # ─── RSA Alerts ───
 
-    def record_ddos_alert(self, client_ip: str, alert_type: str, severity: str,
+    def record_rsa_alert(self, client_ip: str, alert_type: str, severity: str,
                           similarity_score: int, details: dict):
         import json
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO ddos_alerts (client_ip, alert_type, severity, similarity_score, details, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO rsa_alerts (client_ip, alert_type, severity, similarity_score, details, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
             (client_ip, alert_type, severity, similarity_score, json.dumps(details), datetime.now())
         )
         conn.commit()
         conn.close()
 
-    def get_ddos_alerts(self) -> List[Dict]:
-        """Get all unresolved DDoS alerts."""
+    def get_rsa_alerts(self) -> List[Dict]:
+        """Get all unresolved RSA Alerts."""
         conn = sqlite3.connect(self.db_file)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM ddos_alerts WHERE resolved = 0 ORDER BY timestamp DESC")
+        cursor.execute("SELECT * FROM rsa_alerts WHERE resolved = 0 ORDER BY timestamp DESC")
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
 
-    def get_all_ddos_alerts(self) -> List[Dict]:
+    def get_all_rsa_alerts(self) -> List[Dict]:
         conn = sqlite3.connect(self.db_file)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM ddos_alerts ORDER BY timestamp DESC")
+        cursor.execute("SELECT * FROM rsa_alerts ORDER BY timestamp DESC")
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -247,7 +247,7 @@ class GhostNetDatabase:
         )
         # Mark alert as resolved if action is Block or Dismiss
         if action in ("Block", "Dismiss"):
-            cursor.execute("UPDATE ddos_alerts SET resolved = 1 WHERE id = ?", (alert_id,))
+            cursor.execute("UPDATE rsa_alerts SET resolved = 1 WHERE id = ?", (alert_id,))
         conn.commit()
         conn.close()
 

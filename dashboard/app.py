@@ -623,12 +623,12 @@ with tab4:
                 else:
                     st.warning("Could not generate report — Groq API may not be available")
 
-    # ─── DDoS & Fingerprint Alerts (global, not per-session) ───
+    # ─── Random Segment Assessment & Fingerprint Alerts (global, not per-session) ───
     st.divider()
-    st.markdown("#### 🔥 DDoS & Fingerprint Alerts")
-    ddos_alerts = db.get_ddos_alerts()
-    if ddos_alerts:
-        for alert in ddos_alerts:
+    st.markdown("#### 🔥 Random Segment Assessment & Fingerprint Alerts")
+    rsa_alerts = db.get_rsa_alerts()
+    if rsa_alerts:
+        for alert in rsa_alerts:
             alert_id = alert['id']
             severity = alert.get('severity', 'MEDIUM')
             sev_color = {'CRITICAL': '#ef4444', 'HIGH': '#f97316', 'MEDIUM': '#ffbd2e', 'LOW': '#27c93f'}.get(severity, '#8b949e')
@@ -666,7 +666,7 @@ with tab4:
                         st.success(f"Action '{action}' recorded for alert #{alert_id}")
                         st.rerun()
     else:
-        st.info("No DDoS alerts — system is monitoring incoming connections")
+        st.info("No RSA Alerts — system is monitoring incoming connections")
 
 # ═══════════════════════════════════════
 # TAB 5: GEO-INTELLIGENCE (Folium Map)
