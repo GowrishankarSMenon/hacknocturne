@@ -30,6 +30,12 @@ class HASSHFingerprinter:
         "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6": "Hydra SSH",
         "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9": "Nmap NSE",
         "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6": "Paramiko (Python)",
+        # Additional known tools
+        "a7a87fbe86774c2e40cc4a7ea2ab1b3c": "PuTTY (alt)",
+        "3f0099d323c3b5a25edec88a88d6c01b": "Paramiko (alt)",
+        "1dd492024d86f9f9c27d5d7e4d6fdb41": "Metasploit",
+        "06046964c022c6407d15a27b12a6a4fb": "AsyncSSH",
+        "63e0e6a2a89f5ece26e26a975b7a6b07": "Masscan-SSH",
     }
 
     def __init__(self, database):
@@ -50,9 +56,6 @@ class HASSHFingerprinter:
         try:
             # After start_server() completes, the transport stores the
             # client-offered algorithms from the KEXINIT message.
-            # Paramiko exposes these via security_options or internal attrs.
-
-            # Try to extract client-offered algorithms
             kex = self._get_client_algorithms(transport, 'kex')
             enc = self._get_client_algorithms(transport, 'encryption')
             mac = self._get_client_algorithms(transport, 'mac')
@@ -62,16 +65,16 @@ class HASSHFingerprinter:
             hassh_input = f"{kex};{enc};{mac};{comp}"
             hassh = hashlib.md5(hassh_input.encode('utf-8')).hexdigest()
 
-            logger.info(f"🔑 HASSH computed: {hassh} (input: {hassh_input[:80]}...)")
+            logger.info(f"HASSH computed: {hassh} (input: {hassh_input[:80]}...)")
             return hassh
 
         except Exception as e:
             logger.debug(f"HASSH computation failed: {e}")
             # Fallback: hash the transport's remote version string
             try:
-                remote_version = transport.remote_version or "unknown"
+                remote_version = getattr(transport, 'remote_version', None) or "unknown"
                 fallback = hashlib.md5(remote_version.encode('utf-8')).hexdigest()
-                logger.info(f"🔑 HASSH fallback (remote version): {fallback}")
+                logger.info(f"HASSH fallback (remote version): {fallback}")
                 return fallback
             except Exception:
                 return None
@@ -82,10 +85,7 @@ class HASSHFingerprinter:
         Paramiko stores these after the KEXINIT exchange.
         """
         try:
-            # Paramiko stores the agreed-upon algorithms in transport
-            # The security_options has the preferred lists
             so = transport.get_security_options()
-
             if algo_type == 'kex':
                 return ','.join(so.kex)
             elif algo_type == 'encryption':
@@ -115,22 +115,28 @@ class HASSHFingerprinter:
 
     def record(self, session_id: str, client_ip: str, hassh: str, username: str = "user"):
         """Store HASSH fingerprint in the global database."""
-        self.database.record_hassh(session_id, client_ip, hassh, username)
-        logger.info(f"🔑 HASSH recorded: {hassh[:12]}... for {client_ip} (session {session_id[:8]})")
+        try:
+            self.database.record_hassh(session_id, client_ip, hassh, username)
+            logger.info(f"HASSH recorded: {hassh[:12]}... for {client_ip} (session {session_id[:8]})")
+        except Exception as e:
+            logger.debug(f"HASSH record failed: {e}")
 
     def correlate(self, hassh: str) -> List[Dict]:
         """
         Find all sessions with the same HASSH fingerprint.
         Returns list of {session_id, client_ip, username, timestamp} dicts.
         """
-        sessions = self.database.get_hassh_sessions(hassh)
-        if len(sessions) > 1:
-            ips = list(set(s['client_ip'] for s in sessions))
-            if len(ips) > 1:
-                logger.warning(
-                    f"🚨 HASSH CORRELATION: {hassh[:12]}... seen from {len(ips)} IPs: {ips}"
-                )
-        return sessions
+        try:
+            sessions = self.database.get_hassh_sessions(hassh) or []
+            if len(sessions) > 1:
+                ips = list(set(s['client_ip'] for s in sessions))
+                if len(ips) > 1:
+                    logger.warning(
+                        f"HASSH CORRELATION: {hassh[:12]}... seen from {len(ips)} IPs: {ips}"
+                    )
+            return sessions
+        except Exception:
+            return []
 
     def identify_tool(self, hassh: str) -> Optional[str]:
         """Look up HASSH against known tool database."""
@@ -138,4 +144,7 @@ class HASSHFingerprinter:
 
     def get_session_hassh(self, session_id: str) -> Optional[str]:
         """Get the HASSH for a specific session."""
-        return self.database.get_session_hassh(session_id)
+        try:
+            return self.database.get_session_hassh(session_id)
+        except Exception:
+            return None

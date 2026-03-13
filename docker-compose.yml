@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  aeroghost:
+    build: .
+    container_name: aeroghost-honeypot
+    ports:
+      - "2222:2222"   # SSH Honeypot
+      - "8501:8501"   # Streamlit Dashboard
+      - "8000:8000"   # REST API
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    volumes:
+      - aeroghost-logs:/app/logs
+      - aeroghost-data:/app/data
+    restart: unless-stopped
+    networks:
+      - aeroghost-net
+
+volumes:
+  aeroghost-logs:
+  aeroghost-data:
+
+networks:
+  aeroghost-net:
+    driver: bridge
