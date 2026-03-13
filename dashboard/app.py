@@ -292,7 +292,7 @@ with tab3:
         df_sessions = df_sessions[['client_ip', 'username', 'start_time', 'commands', 'status']]
         df_sessions.columns = ['IP Address', 'Username', 'Start Time', 'Commands', 'Status']
         
-        st.dataframe(df_sessions, use_container_width=True)
+        st.dataframe(df_sessions, width="stretch")
     else:
         st.info("No active sessions")
 
