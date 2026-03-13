@@ -4,11 +4,18 @@ Handles all standard Linux commands deterministically using the VirtualFileSyste
 No LLM needed for command responses.
 """
 
+import os
 import re
 import logging
 import random
+import json
 from datetime import datetime
 from typing import Optional, Tuple
+
+try:
+    import requests as http_requests
+except ImportError:
+    http_requests = None
 
 from state_manager.file_system import VirtualFileSystem, FSNode
 from agents.network_sim import NETWORK_NODES, resolve_target, build_node_filesystem, get_node_info
@@ -18,7 +25,17 @@ logger = logging.getLogger(__name__)
 # Fake system info constants
 KERNEL_VERSION = "5.15.0-91-generic"
 OS_VERSION = "Ubuntu 22.04.3 LTS"
-HOSTNAME = "ghostnet"
+HOSTNAME = "aeroghost"
+
+# Requestly mock server URL (set in .env)
+REQUESTLY_MOCK_URL = os.environ.get("REQUESTLY_MOCK_URL", "").rstrip("/")
+
+# Hosts that should be proxied to Requestly
+_INTERNAL_HOSTS = {
+    "localhost", "127.0.0.1",
+    "10.0.1.50", "10.0.1.51", "10.0.1.52", "10.0.1.53",
+    "prod-db-01", "dev-api-02", "monitoring", "backup-srv",
+}
 USERNAME = "user"
 UPTIME_STR = None  # generated at init
 
@@ -1075,19 +1092,92 @@ class CommandHandler:
         lines.append(f"\nNmap done: {len(NETWORK_NODES)} IP addresses ({len(NETWORK_NODES)} hosts up) scanned in {random.uniform(2,8):.2f} seconds")
         return "\n".join(lines)
 
+    def _parse_url(self, raw_url: str):
+        """Extract (host, port, path) from a raw URL string."""
+        url = raw_url.strip()
+        # Strip scheme
+        for scheme in ("https://", "http://"):
+            if url.startswith(scheme):
+                url = url[len(scheme):]
+                break
+        # Split host:port/path
+        host_part, _, path = url.partition("/")
+        path = "/" + path if path else "/"
+        # Strip port from host
+        host = host_part.split(":")[0]
+        return host, path
+
+    def _proxy_to_requestly(self, path: str) -> Optional[str]:
+        """
+        Proxy a request path to the Requestly mock server.
+        Returns the response body or None if unavailable.
+        """
+        if not REQUESTLY_MOCK_URL or http_requests is None:
+            return None
+        try:
+            resp = http_requests.get(
+                f"{REQUESTLY_MOCK_URL}{path}",
+                timeout=3,
+                headers={"Accept": "application/json"}
+            )
+            if resp.status_code == 200:
+                # Try to pretty-print JSON
+                try:
+                    data = resp.json()
+                    return json.dumps(data, indent=2)
+                except (ValueError, json.JSONDecodeError):
+                    return resp.text
+            return None
+        except Exception as e:
+            logger.debug(f"Requestly proxy failed: {e}")
+            return None
+
     def _cmd_wget(self, args: list) -> str:
         url = next((a for a in args if not a.startswith("-")), "")
         self._log_exfil_url(url)
-        host = url.replace("https://", "").replace("http://", "").split("/")[0] if url else url
+        if not url:
+            return "wget: missing URL"
+
+        host, path = self._parse_url(url)
+
+        # If targeting an internal host, proxy through Requestly
+        if host in _INTERNAL_HOSTS:
+            logger.warning(f"[API PROBE] Attacker wget'd internal API: {url}")
+            body = self._proxy_to_requestly(path)
+            if body:
+                filename = path.split("/")[-1] or "index.html"
+                return (
+                    f"--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\n"
+                    f"Connecting to {host}... connected.\n"
+                    f"HTTP request sent, awaiting response... 200 OK\n"
+                    f"Length: {len(body)} [application/json]\n"
+                    f"Saving to: '{filename}'\n\n"
+                    f"{filename}       100%[===========>]   {len(body)}  --.-KB/s    in 0s\n\n"
+                    f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - '{filename}' saved [{len(body)}/{len(body)}]"
+                )
+
+        host_part = url.replace("https://", "").replace("http://", "").split("/")[0] if url else url
         return (
             f"--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\n"
-            f"Resolving {host}... failed: Temporary failure in name resolution.\n"
-            f"wget: unable to resolve host address '{host}'"
+            f"Resolving {host_part}... failed: Temporary failure in name resolution.\n"
+            f"wget: unable to resolve host address '{host_part}'"
         )
 
     def _cmd_curl(self, args: list) -> str:
         url = next((a for a in args if not a.startswith("-")), "")
         self._log_exfil_url(url)
+        if not url:
+            return "curl: try 'curl --help' for more information"
+
+        host, path = self._parse_url(url)
+
+        # If targeting an internal host, proxy through Requestly
+        if host in _INTERNAL_HOSTS:
+            logger.warning(f"[API PROBE] Attacker curl'd internal API: {url}")
+            body = self._proxy_to_requestly(path)
+            if body:
+                return body
+
         return f"curl: (6) Could not resolve host: {url}"
 
     # ──────────────────────────────────────────────
