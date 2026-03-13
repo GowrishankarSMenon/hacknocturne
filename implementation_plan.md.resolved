@@ -1,0 +1,148 @@
+# Tree-Based Virtual Filesystem for GhostNet
+
+Replace the flaky LLM-based command responses with a **deterministic, stateful tree filesystem**. The Groq API is still used for *intent analysis* (Orchestrator) and *attacker profiling* (Profiler), but **not for generating command output**.
+
+## Architecture
+
+```
+/                        ← Root (FSNode)
+└── home/
+    └── user/            ← pwd starts here
+        ├── Documents/
+        │   └── notes.txt
+        ├── Desktop/
+        │   └── resume.pdf
+        ├── Downloads/
+        │   ├── tools.zip
+        │   └── script.sh
+        └── .bash_history
+```
+
+Each `FSNode` is:
+- **type**: `dir` or [file](file:///d:/just%20learning/ghostnet/agents/os_simulator.py#156-217)
+- **name**: string
+- **children**: `{name → FSNode}` (dirs only)
+- **content**: string (files only)
+- **parent**: reference to parent node
+- **permissions**: unix-style string e.g. `rwxr-xr-x`
+- **owner**: e.g. `user`
+- **size**: int (bytes)
+- **modified**: datetime string
+
+A **session pointer** (`cwd`) starts at `/home/user` and moves as `cd` is called.
+
+---
+
+## Proposed Changes
+
+### Core: New Virtual Filesystem Engine
+
+#### [MODIFY] [file_system.py](file:///d:/just%20learning/ghostnet/state_manager/file_system.py)
+
+Complete rewrite. New class: `VirtualFileSystem` with:
+
+- `FSNode` inner class (tree node)
+- `build_random_tree()` — builds realistic randomized starting state
+- `resolve_path(path, cwd)` — handles absolute `/…` and relative `../..` paths
+- `get_pwd(cwd_node)` — walks parents to build path string
+- Navigation: `cd(path)`, `ls(path)`, `pwd()`
+- Mutation: `mkdir(path)`, `touch(path, content)`, `rm(path)`, `cat(path)`, `echo(file, text)`
+- Meta: `stat(path)`, `file(path)`
+- Persistence: `save_to_json()` / `load_from_json()`
+
+**Random initial content** (generated per-session):
+```
+/home/user/
+  Documents/    → report_2025.pdf, budget.xlsx, notes.txt
+  Desktop/      → screenshot.png, todo.txt
+  Downloads/    → setup.sh, archive.tar.gz
+  .bash_history → realistic fake history
+  .bashrc       → realistic bashrc
+```
+
+---
+
+### Command Interpreter
+
+#### [NEW] [command_handler.py](file:///d:/just%20learning/ghostnet/agents/command_handler.py)
+
+A pure Python command interpreter (no LLM). Parses the command string and calls the appropriate filesystem method.
+
+**Supported commands:**
+
+| Command | Behaviour |
+|---------|-----------|
+| `pwd` | Returns current path |
+| `ls`, `ls -la`, `ls -l`, `ls /path` | Lists directory contents with sizes, perms |
+| `cd <dir>`, `cd ..`, `cd ~`, `cd /` | Changes cwd node |
+| `mkdir <name>` | Creates child dir node |
+| `touch <name>` | Creates empty file node |
+| `rm <file>`, `rm -r <dir>` | Deletes node |
+| `cat <file>` | Returns file content |
+| `echo "text" > file` | Writes to file |
+| `echo "text" >> file` | Appends to file |
+| `whoami` | Returns `user` |
+| `hostname` | Returns `ghostnet` |
+| `uname -a` | Returns fake kernel string |
+| `id` | Returns uid/gid |
+| `ps`, `ps aux` | Returns fake process list |
+| `ifconfig`, `ip a` | Returns fake network config |
+| `history` | Returns `.bash_history` content |
+| `clear` | Returns ANSI clear sequence |
+| `exit`, `quit` | Signals session end |
+| `<anything else>` | `bash: <cmd>: command not found` |
+
+---
+
+### Wiring It Together
+
+#### [MODIFY] [os_simulator.py](file:///d:/just%20learning/ghostnet/agents/os_simulator.py)
+
+- Remove `OSSimulator` class entirely (was responsible for LLM command responses)
+- Keep `Orchestrator` and `Profiler` (still use Groq for intent analysis/profiling)
+
+#### [MODIFY] [main.py](file:///d:/just%20learning/ghostnet/main.py)
+
+- Replace `self.os_simulator = OSSimulator()` with `self.command_handler = CommandHandler()`
+- Each session gets its **own** `VirtualFileSystem` instance (so each attacker sees their own fresh filesystem)
+- `_handle_command()` calls `command_handler.execute(command, session_fs)` instead of `os_simulator.execute_command()`
+- `cwd` (current working directory node) is stored per-session in `self.active_sessions[session_id]["cwd"]`
+
+---
+
+## Key Design Decisions
+
+> [!NOTE]
+> Each SSH session gets its **own** independent filesystem tree. This means two attackers connecting simultaneously won't interfere with each other, and each session starts fresh with randomized content.
+
+> [!NOTE]
+> The Groq API is **still used** for Orchestrator (intent classification) and Profiler (skill level analysis). Only the command *output generation* is replaced. This keeps the honeypot intelligent without being unreliable for basic shell commands.
+
+> [!TIP]
+> The filesystem state is persisted per-session to JSON in `logs/fs_<session_id>.json`. This lets the dashboard potentially replay what files an attacker created.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Run `python test_components.py` (imports should still pass)
+
+### Manual Shell Tests
+```bash
+ssh user@localhost -p 2222
+> pwd           # /home/user
+> ls            # Documents  Desktop  Downloads
+> cd Desktop    # (no output, prompt changes context)
+> ls            # screenshot.png  todo.txt
+> mkdir test    # mkdir: created directory 'test'
+> ls            # screenshot.png  todo.txt  test
+> cd ..         # back to /home/user
+> pwd           # /home/user
+> touch secret.txt
+> cat secret.txt # (empty)
+> echo "hello" > secret.txt
+> cat secret.txt # hello
+> rm secret.txt
+> ls            # secret.txt gone
+```
