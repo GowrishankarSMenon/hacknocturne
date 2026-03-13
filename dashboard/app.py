@@ -14,8 +14,7 @@ from streamlit_autorefresh import st_autorefresh
 
 # Page configuration
 st.set_page_config(
-    page_title="GhostNet Intelligence Dashboard",
-    page_icon="👻",
+    page_title="AeroGhost Intelligence Dashboard",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -98,7 +97,7 @@ st.markdown("""
         50% { opacity: 0.5; }
     }
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         padding: 20px;
         border-radius: 10px;
         color: white;
@@ -127,18 +126,18 @@ if "sessions_cleaned" not in st.session_state:
 st_autorefresh(interval=1000, limit=None, key="live_refresh")
 
 # Main dashboard
-st.title("👻 GhostNet Intelligence Dashboard")
+st.title("AeroGhost Intelligence Dashboard")
 st.markdown("**Real-time Cyber-Deception Monitoring & Attack Analysis**")
 
 # Refresh button and clear old sessions button
 col_refresh, col_clear, _ = st.columns([1, 1, 6])
 
 with col_refresh:
-    if st.button("🔄 Refresh", key="refresh_main"):
+    if st.button("Refresh", key="refresh_main"):
         st.rerun()
 
 with col_clear:
-    if st.button("🧹 Clear Old Sessions", key="clear_sessions"):
+    if st.button("Clear Old Sessions", key="clear_sessions"):
         closed = db.close_all_active_sessions()
         st.toast(f"Closed {closed} stale session(s)")
         st.rerun()
@@ -185,7 +184,7 @@ with col4:
 st.divider()
 
 # Main content tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["👁 Live Terminal", "Live Activity", "Sessions", "Intelligence", "Analytics"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Live Terminal", "Live Activity", "Sessions", "Intelligence", "Analytics"])
 
 # ═════════════════════════════════════════════════
 # TAB 1: LIVE TERMINAL (the star of the show)
@@ -198,10 +197,10 @@ with tab1:
                 <span class="terminal-dot red"></span>
                 <span class="terminal-dot yellow"></span>
                 <span class="terminal-dot green"></span>
-                <span class="terminal-title">ghostnet — waiting for connections...</span>
+                <span class="terminal-title">aeroghost — waiting for connections...</span>
             </div>
             <div class="terminal-body">
-                <span class="prompt">system@ghostnet:~$</span> <span class="typing">Waiting for attacker to connect on port 2222...</span><span class="cursor">▌</span>
+                <span class="prompt">system@aeroghost:~$</span> <span class="typing">Waiting for attacker to connect on port 2222...</span><span class="cursor">▌</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -220,7 +219,7 @@ with tab1:
                 cmd_text = html.escape(cmd['command'])
                 resp_text = html.escape(cmd['response']) if cmd['response'] else ""
                 terminal_lines.append(
-                    f'<span class="prompt">user@ghostnet:~$</span> <span class="command">{cmd_text}</span>'
+                    f'<span class="prompt">user@aeroghost:~$</span> <span class="command">{cmd_text}</span>'
                 )
                 if resp_text:
                     terminal_lines.append(f'<span class="output">{resp_text}</span>')
@@ -229,11 +228,11 @@ with tab1:
             if current_buffer:
                 escaped_buffer = html.escape(current_buffer)
                 terminal_lines.append(
-                    f'<span class="prompt">user@ghostnet:~$</span> <span class="typing">{escaped_buffer}</span><span class="cursor">▌</span>'
+                    f'<span class="prompt">user@aeroghost:~$</span> <span class="typing">{escaped_buffer}</span><span class="cursor">▌</span>'
                 )
             else:
                 terminal_lines.append(
-                    f'<span class="prompt">user@ghostnet:~$</span> <span class="cursor">▌</span>'
+                    f'<span class="prompt">user@aeroghost:~$</span> <span class="cursor">▌</span>'
                 )
 
             terminal_content = "\n".join(terminal_lines)
@@ -248,7 +247,7 @@ with tab1:
                     <span class="terminal-dot red"></span>
                     <span class="terminal-dot yellow"></span>
                     <span class="terminal-dot green"></span>
-                    <span class="terminal-title">{html.escape(ip)} — {html.escape(session.get('username', 'user'))}@ghostnet (Session: {sid[:8]}...)</span>
+                    <span class="terminal-title">{html.escape(ip)} — {html.escape(session.get('username', 'user'))}@aeroghost (Session: {sid[:8]}...)</span>
                     {badge}
                 </div>
                 <div class="terminal-body">{terminal_content}</div>
@@ -263,7 +262,7 @@ with tab2:
         st.info("No active sessions. Waiting for attackers...")
     else:
         for session in active_sessions:
-            with st.expander(f"📍 {session['client_ip']} - {session['username']}@ghostnet (ID: {session['session_id'][:8]}...)", expanded=False):
+            with st.expander(f"{session['client_ip']} - {session['username']}@aeroghost (ID: {session['session_id'][:8]}...)", expanded=False):
                 commands = db.get_session_commands(session['session_id'])
                 
                 if commands:
@@ -326,7 +325,7 @@ with tab4:
             
             st.subheader("Command Analysis")
             for cmd in commands[-5:]:
-                with st.expander(f"🔍 {cmd['command']}", expanded=False):
+                with st.expander(f"{cmd['command']}", expanded=False):
                     st.write(f"**Timestamp:** {cmd['timestamp']}")
                     st.write(f"**Execution Time:** {cmd['execution_time_ms']}ms")
                     st.text(cmd['response'][:500])
@@ -335,7 +334,7 @@ with tab4:
 with tab5:
     st.subheader("Historical Analytics")
     
-    st.write("📊 Attack trends, geographic distribution, and technique analysis")
+    st.write("Attack trends, geographic distribution, and technique analysis")
     
     col1, col2 = st.columns(2)
     
@@ -362,6 +361,6 @@ st.divider()
 # Footer
 st.markdown("""
 ---
-**GhostNet** | Autonomous AI Cyber-Deception System
-Status: 🟢 Online | Last Updated: {} | Version: 0.2.0
+**AeroGhost** | Autonomous AI Cyber-Deception System
+Status: Online | Last Updated: {} | Version: 0.2.0
 """.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
