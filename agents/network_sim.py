@@ -84,10 +84,10 @@ NETWORK_NODES = {
                 "NODE_ENV=production\n"
                 "DATABASE_URL=mysql://root:aF7kP2mN9xQ4wR1t@10.0.1.50:3306/users_prod\n"
                 "REDIS_URL=redis://localhost:6379\n"
-                "JWT_SECRET=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.FAKE_SECRET_KEY\n"
-                "AWS_ACCESS_KEY_ID=AKIAFAKE12345EXAMPLE\n"
-                "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
-                "STRIPE_SECRET_KEY=sk_live_FAKE_51Hx8vP2eZvKYlo2C0\n"
+                "JWT_SECRET=hp_jwt_7f3d2c1b9e4a8f6e2d5c8b1a4e7f0d3c\n"
+                "CLOUD_KEY_ID=HONEYPOT-ACCESS-KEY-ID-DEMO12\n"
+                "CLOUD_KEY_SECRET=Hp0nEyP0t+CloudKeyExampleDemoSecretVal2024\n"
+                "PAYMENT_KEY=honeypot_payment_key_51Hx8vP2eZvKY_demo\n"
             ),
             "/opt/api/package.json": (
                 '{"name": "aeroghost-api", "version": "2.1.0", '
