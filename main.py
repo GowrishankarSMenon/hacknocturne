@@ -7,9 +7,10 @@ import os
 import logging
 import sys
 import time
+import random
 import threading
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +34,7 @@ from agents.command_handler import CommandHandler
 from agents.breadcrumbs import BreadcrumbAgent
 from state_manager.database import GhostNetDatabase, SessionDatabase
 from state_manager.file_system import VirtualFileSystem, FSNode
+from agents.intelligence_agency import GeneralIntelligenceAgency
 
 
 class GhostNetHoneypot:
@@ -69,6 +71,11 @@ class GhostNetHoneypot:
 
         # Session tracking
         self.active_sessions = {}
+
+        # General Intelligence Agency — session watchdog
+        self.gia = GeneralIntelligenceAgency(self.active_sessions, self.database)
+        self.gia.start()
+        logger.info("✓ GIA (General Intelligence Agency) initialized")
 
         # SSH server
         self.ssh_server = SSHServerSocket(
@@ -155,6 +162,7 @@ class GhostNetHoneypot:
             if command.lower() in ["exit", "quit"]:
                 self.database.close_session(session_id)
                 self.database.clear_live_typing(session_id)
+                self.gia.cleanup_session(session_id)
                 if session_id in self.active_sessions:
                     del self.active_sessions[session_id]
                 return ""
@@ -167,11 +175,14 @@ class GhostNetHoneypot:
             # Log to per-session DB
             session_db.log_command(command, response, execution_time)
 
+            # GIA: record command timing for bot detection
+            self.gia.record_command_time(session_id)
+
             logger.info(f"[{session_id}] Command: {command[:50]} ({execution_time}ms)")
 
             # Breadcrumb pipeline (background thread — non-blocking)
+            # NOTE: increment_cmd moved INSIDE the pipeline thread (Bug 2 fix)
             if self.breadcrumb_agent:
-                self.breadcrumb_agent.increment_cmd(session_id)
                 threading.Thread(
                     target=self._breadcrumb_pipeline,
                     args=(command, session_id),
@@ -198,6 +209,9 @@ class GhostNetHoneypot:
             fs = session["filesystem"]
             history = session["commands"]
 
+            # Increment command counter INSIDE the background thread (Bug 2 fix)
+            self.breadcrumb_agent.increment_cmd(session_id)
+
             # 1. Detect intent
             intent, confidence = self.breadcrumb_agent.detect_intent(command, history)
 
@@ -215,7 +229,22 @@ class GhostNetHoneypot:
             if not filename or not content:
                 return
 
-            # 4. Plant in filesystem (inject FSNode at current directory)
+            # 4. Plausibility check: only plant in dirs that have other files
+            visible_files = [c for c in fs.cwd.children.values() if not c.name.startswith(".")]
+            if len(visible_files) < 1:
+                logger.debug(f"[{session_id}] Skipping breadcrumb — empty directory")
+                return
+
+            # 5. Delay before planting (Bug 2 fix)
+            # Random delay so file doesn't appear immediately after attacker's command
+            delay = random.uniform(3, 10)
+            time.sleep(delay)
+
+            # Re-check session still exists after delay
+            if session_id not in self.active_sessions:
+                return
+
+            # 6. Plant in filesystem
             existing = fs.cwd.get_child(filename)
             if existing:
                 return  # Don't overwrite existing files
@@ -227,10 +256,15 @@ class GhostNetHoneypot:
                 content=content,
                 size=len(content)
             )
-            breadcrumb_node.modified = datetime.now()
+            # Set REALISTIC timestamp — file should look old, not just-created
+            breadcrumb_node.modified = datetime.now() - timedelta(
+                days=random.randint(5, 60),
+                hours=random.randint(0, 23),
+                minutes=random.randint(0, 59)
+            )
             fs.cwd.add_child(breadcrumb_node)
 
-            # 5. Register as canary in per-session DB
+            # 7. Register as canary in per-session DB
             canary_path = fs.get_pwd()
             if not canary_path.endswith("/"):
                 canary_path += "/"
@@ -240,7 +274,7 @@ class GhostNetHoneypot:
             # Record plant in rate limiter
             self.breadcrumb_agent.record_plant(session_id)
 
-            logger.info(f"🎣 [{session_id}] Breadcrumb planted: '{filename}' at {fs.get_pwd()} (intent: {intent})")
+            logger.info(f"🎣 [{session_id}] Breadcrumb planted: '{filename}' at {fs.get_pwd()} (intent: {intent}) [delay: {delay:.1f}s]")
 
         except Exception as e:
             logger.debug(f"Breadcrumb pipeline error: {e}")
@@ -265,6 +299,7 @@ class GhostNetHoneypot:
 
     def shutdown(self):
         logger.info("Shutting down GhostNet...")
+        self.gia.stop()
         self.ssh_server.stop()
         for session_id in list(self.active_sessions.keys()):
             self.database.close_session(session_id)

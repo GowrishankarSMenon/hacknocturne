@@ -150,7 +150,16 @@ class VirtualFileSystem:
         self._generate_themed_network(user_home, "Music", max_depth=5)
         self._generate_themed_network(user_home, "Videos", max_depth=4)
 
-        # Dot files
+        # Inject dotfiles LAST — guarantees they can't be overwritten by themed generation
+        self._inject_dotfiles(user_home)
+
+        return root
+
+    def _inject_dotfiles(self, user_home: FSNode):
+        """
+        Create dotfiles (.bashrc, .bash_history, .profile, .ssh) in user's home.
+        Called LAST in _build_tree to ensure these files are always present.
+        """
         user_home.add_child(FSNode(".bashrc", "file", owner="user", group="user", permissions="rw-r--r--", size=3771,
             content='# ~/.bashrc: executed by bash(1) for non-login shells.\n\n# If not running interactively, don\'t do anything\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n\n# append to the history file\nshopt -s histappend\n\nHISTSIZE=1000\nHISTFILESIZE=2000\n\n# check the window size after each command\nshopt -s checkwinsize\n\n# set a fancy prompt\nPS1=\'${debian_chroot:+($debian_chroot)}\\u@\\h:\\w\\$ \'\n\n# enable color support of ls\nalias ls=\'ls --color=auto\'\nalias ll=\'ls -alF\'\nalias la=\'ls -A\'\nalias l=\'ls -CF\'\n'))
         user_home.add_child(FSNode(".bash_history", "file", owner="user", group="user", permissions="rw-------", size=2048,
@@ -158,8 +167,6 @@ class VirtualFileSystem:
         user_home.add_child(FSNode(".profile", "file", owner="user", group="user", permissions="rw-r--r--", size=807,
             content='# ~/.profile: executed by the command interpreter for login shells.\n\nif [ -n "$BASH_VERSION" ]; then\n    if [ -f "$HOME/.bashrc" ]; then\n        . "$HOME/.bashrc"\n    fi\nfi\n\nif [ -d "$HOME/bin" ] ; then\n    PATH="$HOME/bin:$PATH"\nfi\n'))
         user_home.add_child(FSNode(".ssh", "dir", owner="user", group="user", permissions="rwx------"))
-
-        return root
 
     def _generate_binary_rubbish(self, size: int = 500) -> str:
         """Generate random unprintable ascii and hex bytes to simulate opening a binary file."""

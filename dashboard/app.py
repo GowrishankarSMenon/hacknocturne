@@ -322,42 +322,94 @@ with tab3:
         st.info("No active sessions")
 
 # ═══════════════════════════════════════
-# TAB 4: ANALYTICS
+# TAB 4: INTELLIGENCE (with GIA alerts)
 # ═══════════════════════════════════════
 with tab4:
-    st.subheader("Attack Intelligence")
-    
-    if active_sessions:
-        selected_session = st.selectbox(
-            "Select Session",
-            [f"{s['client_ip']} ({s['username']})" for s in active_sessions],
-            key="session_select"
-        )
-        
-        selected_ip = selected_session.split()[0]
-        selected_session_obj = next((s for s in active_sessions if s['client_ip'] == selected_ip), None)
-        
-        if selected_session_obj:
-            session_id = selected_session_obj['session_id']
-            sdb = session_dbs.get(session_id)
-            commands = sdb.get_commands() if sdb else []
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.metric("Commands Executed", len(commands))
-                st.metric("Session Duration", "< 1 minute")
-            
-            with col2:
-                st.metric("Attack Type", "Reconnaissance")
-                st.metric("Skill Level", "Intermediate")
-            
-            st.subheader("Command Analysis")
-            for cmd in commands[-5:]:
-                with st.expander(f"{cmd['command']}", expanded=False):
-                    st.write(f"**Timestamp:** {cmd['timestamp']}")
-                    st.write(f"**Execution Time:** {cmd.get('execution_time_ms', 0)}ms")
-                    st.text(str(cmd.get('response', ''))[:500])
+    st.subheader("🧠 Attack Intelligence & GIA Monitoring")
+
+    if not active_sessions:
+        st.info("No active sessions — intelligence will populate when an attacker connects")
+    else:
+        for session in active_sessions:
+            sid = session['session_id']
+            sdb = session_dbs.get(sid)
+            if not sdb:
+                continue
+
+            with st.expander(f"📍 {session['client_ip']} — Session {sid[:12]}...", expanded=True):
+                commands = sdb.get_commands()
+                intents = sdb.get_intents()
+                canaries = sdb.get_all_canaries()
+                triggered = sdb.get_canary_events()
+                threat_events = sdb.get_threat_events()
+
+                # Metrics row
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Commands", len(commands))
+                c2.metric("Intents Detected", len(intents))
+                c3.metric("Canaries Planted", len(canaries))
+                c4.metric("Canaries Triggered", len(triggered))
+
+                # Intent progression
+                if intents:
+                    st.markdown("**Intent Progression:**")
+                    intent_html = ""
+                    for i, intent in enumerate(intents):
+                        itype = intent['intent_type']
+                        intent_html += f'<span class="intent-badge intent-{itype}">{itype.replace("_", " ").title()}</span>'
+                        if i < len(intents) - 1:
+                            intent_html += " → "
+                    st.markdown(intent_html, unsafe_allow_html=True)
+
+                # Canary status
+                if canaries:
+                    st.markdown("**🎣 Canary Tripwires:**")
+                    for c in canaries:
+                        status = "🔴 TRIGGERED" if c['triggered'] else "🟢 Planted"
+                        st.markdown(f"- `{c['filepath']}` — Intent: *{c['intent']}* — {status}")
+
+                # GIA Alerts
+                gia_warnings = [e for e in threat_events if e.get('event_type') == 'gia_warning']
+                if gia_warnings:
+                    st.markdown("**🕵️ GIA Alerts:**")
+                    for warning in gia_warnings:
+                        try:
+                            data = json.loads(warning.get('data', '{}')) if isinstance(warning.get('data'), str) else warning.get('data', {})
+                        except Exception:
+                            data = {}
+                        check = data.get('check', 'unknown')
+                        message = data.get('message', 'No details')
+                        severity = warning.get('severity', 'medium')
+
+                        # Color coding
+                        if check == 'bot_detected':
+                            color = '#d29922'  # orange
+                            icon = '🤖'
+                        elif check == 'suspicious_behavior':
+                            color = '#e3b341'  # yellow
+                            icon = '🔍'
+                        elif check == 'realism_check_failed':
+                            color = '#da3633'  # red
+                            icon = '⏰'
+                        else:
+                            color = '#8b949e'
+                            icon = '⚠️'
+
+                        st.markdown(
+                            f'<div style="background:{color}22;border-left:4px solid {color};padding:8px 12px;margin:4px 0;border-radius:4px;">'
+                            f'{icon} <b>{check.replace("_", " ").title()}</b> ({severity.upper()}) — {html.escape(message)}'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                # Threat report button
+                if st.button(f"🧠 Generate Threat Report", key=f"report_{sid}"):
+                    report_data = sdb.generate_report_data()
+                    report = _generate_threat_report(report_data, session)
+                    if report:
+                        st.markdown(f'<div class="threat-report">{report}</div>', unsafe_allow_html=True)
+                    else:
+                        st.warning("Could not generate report — Groq API may not be available")
 
 # TAB 5: Analytics
 with tab5:
