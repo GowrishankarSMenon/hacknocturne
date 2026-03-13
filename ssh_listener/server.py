@@ -190,9 +190,15 @@ class SSHServerSocket:
                             channel.send("user@aeroghost:~$ ")
                             continue
                         
-                        # Handle exit
+                        # Handle exit — notify command_handler so DB session is closed
                         if command.lower() in ("exit", "quit"):
                             channel.send("logout\r\n")
+                            # Clear live typing feed first
+                            if self.live_feed_callback:
+                                self.live_feed_callback(session_id, "")
+                            # Notify main handler so it closes the DB session
+                            if self.command_handler:
+                                self.command_handler("exit", session_id, client_ip)
                             return
                         
                         logger.info(f"[{session_id}] Command: {command}")

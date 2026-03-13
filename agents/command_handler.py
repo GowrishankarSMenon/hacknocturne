@@ -28,8 +28,10 @@ class CommandHandler:
     Executes commands against a VirtualFileSystem instance.
     """
 
-    def __init__(self, filesystem: VirtualFileSystem):
+    def __init__(self, filesystem: VirtualFileSystem, canary_check_fn=None, canary_trigger_fn=None):
         self.fs = filesystem
+        self.canary_check_fn = canary_check_fn    # (filepath) -> dict|None
+        self.canary_trigger_fn = canary_trigger_fn  # (canary_info) -> None
         self._boot_time = datetime.now().replace(
             hour=random.randint(0, 6),
             minute=random.randint(0, 59),
@@ -383,6 +385,12 @@ class CommandHandler:
                 output.append(f"cat: {fname}: Is a directory")
             else:
                 output.append(target.content)
+                # Check if this file is a canary tripwire
+                if self.canary_check_fn and self.canary_trigger_fn:
+                    filepath = target.get_path()
+                    hit = self.canary_check_fn(filepath)
+                    if hit:
+                        self.canary_trigger_fn(hit)
 
         return "\n".join(output)
 

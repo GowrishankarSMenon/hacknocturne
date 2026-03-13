@@ -1,0 +1,179 @@
+# AI-Generated Adaptive Breadcrumbs — Implementation Plan
+
+## What This Builds
+After every command, Groq classifies attacker **intent** in the background. Based on intent, it plants a convincing **fake file (breadcrumb)** in the attacker's current directory. Every breadcrumb is secretly a **canary** — when the attacker opens it, a Critical Threat Event fires instantly in the dashboard. At the end, one click generates a full **Threat Intelligence Report**.
+
+---
+
+## Data Isolation Strategy
+
+> [!IMPORTANT]
+> **Per-session SQLite files** — each attacker session gets its **own** database file.
+> Zero risk of cross-session leakage because sessions literally cannot read each other's files.
+
+```
+logs/
+├── ghostnet.db                         ← Session index ONLY (session_id, ip, status)
+├── sessions/
+│   ├── 20250313_134500.db              ← Session A: commands, canaries, intents
+│   ├── 20250313_140200.db              ← Session B: completely separate
+│   └── 20250313_141000.db              ← Session C: completely separate
+└── ssh_host_key
+```
+
+**Main DB** (`ghostnet.db`) — only holds the sessions registry table:
+```sql
+sessions (session_id PK, client_ip, username, start_time, end_time, status)
+```
+
+**Per-session DB** (`sessions/<session_id>.db`) — holds everything about ONE attacker:
+```sql
+commands     (id, timestamp, command, response, execution_time_ms)
+intents      (id, timestamp, intent_type, confidence, trigger_command)
+canary_files (id, filepath, intent, planted_at, triggered, triggered_at)
+threat_events(id, timestamp, event_type, severity, data JSON)
+```
+
+---
+
+## Proposed Changes
+
+### 1. Database Layer
+
+#### [MODIFY] [database.py](file:///d:/just%20learning/ghostnet/state_manager/database.py)
+
+Changes:
+- [GhostNetDatabase](file:///d:/just%20learning/ghostnet/state_manager/database.py#7-212) keeps `ghostnet.db` for session index only
+- New class `SessionDatabase(session_id)` — opens/creates `logs/sessions/<session_id>.db`
+- `SessionDatabase` has tables: [commands](file:///d:/just%20learning/ghostnet/state_manager/database.py#125-139), `intents`, `canary_files`, `threat_events`
+- New methods on `SessionDatabase`:
+  - [log_command(cmd, response, ms)](file:///d:/just%20learning/ghostnet/state_manager/database.py#99-111) — no session_id parameter needed (it owns its db)
+  - `log_intent(intent_type, confidence, trigger_cmd)`
+  - `register_canary(filepath, intent)`
+  - `trigger_canary(filepath) -> dict|None`
+  - [log_threat_event(event_type, severity, data)](file:///d:/just%20learning/ghostnet/state_manager/database.py#112-124)
+  - `get_commands() -> List`
+  - `get_canary_events() -> List`
+  - `generate_report_data() -> dict` — all data for Groq report
+
+---
+
+### 2. New: Breadcrumb Agent
+
+#### [NEW] [breadcrumbs.py](file:///d:/just%20learning/ghostnet/agents/breadcrumbs.py)
+
+Class: `BreadcrumbAgent`
+
+**Intent detection table:**
+| Intent | Trigger Commands | File Planted |
+|--------|-----------------|--------------|
+| `credential_hunt` | `cat .bash_history`, `find / -name "*.conf"`, `cat /etc/passwd` | `config.php` / [.env](file:///d:/just%20learning/ghostnet/.env) with fake DB password |
+| `ssh_key_hunt` | `ls .ssh`, `find / -name "*.key"`, `find / -name "id_rsa"` | `.ssh/id_rsa` (realistic fake RSA key) |
+| `database_hunt` | `ps aux`, `ls /var/lib`, [netstat](file:///d:/just%20learning/ghostnet/agents/command_handler.py#839-850) (looking for mysql) | `/home/user/.my.cnf` with fake mysql creds |
+| `lateral_movement` | `cat /etc/hosts`, `arp -a`, `ip route` | fake entry in `/etc/hosts` + fake `vpn_connect.sh` |
+| `exfil_prep` | [tar](file:///d:/just%20learning/ghostnet/main.py#184-202), `zip`, `find / -size +10M` | `backup_march2025.tar.gz` (large fake archive) |
+| `none` | Everything else | No breadcrumb |
+
+**Key methods:**
+- `detect_intent(command, history) -> (intent, confidence)` — Groq call, returns in <500ms
+- `generate_breadcrumb(intent, cwd_path) -> (filename, content)` — Groq generates realistic file content
+- `should_plant(session_id) -> bool` — rate limiter: max 1 breadcrumb per 3 commands, max 5 total per session
+
+---
+
+### 3. Command Handler
+
+#### [MODIFY] [command_handler.py](file:///d:/just%20learning/ghostnet/agents/command_handler.py)
+
+In [_cmd_cat()](file:///d:/just%20learning/ghostnet/agents/command_handler.py#371-388) — after reading the file, check if it's a canary:
+```python
+if self.canary_check_fn:
+    hit = self.canary_check_fn(resolved_path)
+    if hit:
+        self.canary_trigger_fn(hit)   # → fires Critical Alert in dashboard
+```
+
+`canary_check_fn` and `canary_trigger_fn` are injected at [CommandHandler](file:///d:/just%20learning/ghostnet/agents/command_handler.py#25-922) creation time in [main.py](file:///d:/just%20learning/ghostnet/main.py).
+
+---
+
+### 4. Main Orchestrator
+
+#### [MODIFY] [main.py](file:///d:/just%20learning/ghostnet/main.py)
+
+- Initialize `BreadcrumbAgent` alongside other agents
+- Each session now creates a `SessionDatabase(session_id)` stored in `active_sessions[session_id]["session_db"]`
+- All [log_command](file:///d:/just%20learning/ghostnet/state_manager/database.py#99-111), [log_threat_event](file:///d:/just%20learning/ghostnet/state_manager/database.py#112-124) calls use `session_db` (not the main db)
+- After each command, spawn background thread:
+  ```python
+  threading.Thread(target=self._breadcrumb_pipeline,
+                   args=(command, session_id), daemon=True).start()
+  ```
+- `_breadcrumb_pipeline`:
+  1. `intent, confidence = breadcrumb_agent.detect_intent(command, history)`
+  2. `session_db.log_intent(intent, confidence, command)`
+  3. If `breadcrumb_agent.should_plant(session_id)`:
+     - `filename, content = breadcrumb_agent.generate_breadcrumb(intent, cwd_path)`
+     - Inject [FSNode](file:///d:/just%20learning/ghostnet/state_manager/file_system.py#17-87) into session filesystem at current directory
+     - `session_db.register_canary(cwd + "/" + filename, intent)`
+- `_on_canary_triggered(session_id, canary_info)`:
+  - `session_db.log_threat_event("canary_accessed", "critical", canary_info)`
+  - Logs: `⚠️ CRITICAL: Attacker accessed canary '{filepath}' — Intent: {intent}`
+
+---
+
+### 5. Dashboard
+
+#### [MODIFY] [dashboard/app.py](file:///d:/just%20learning/ghostnet/dashboard/app.py)
+
+**Critical Alert Banner** (Live Terminal tab, top):
+- Every 1s refresh: query each active session's `SessionDatabase.get_canary_events()`
+- If triggered canaries found → red flashing banner:
+  ```
+  🚨 CRITICAL EVENT — Session 20250313_134500
+  Attacker accessed canary file: /home/user/.ssh/id_rsa
+  Revealed intent: SSH Lateral Movement
+  Time: 13:47:22
+  ```
+
+**"🧠 Generate Threat Report" button** (per session in Intelligence tab):
+- Calls `session_db.generate_report_data()` to get all commands + intents + canary events
+- Sends to Groq → gets back a formatted markdown threat report:
+  ```markdown
+  ## GhostNet Threat Intelligence Report
+  **Session:** 20250313_134500 | **IP:** 192.168.1.x | **Risk:** CRITICAL
+  
+  ### Intent Progression
+  1. Reconnaissance (ls, pwd, whoami)
+  2. Credential Hunt (cat .bash_history, find *.conf)
+  3. Lateral Movement Attempt (accessed fake id_rsa)
+  
+  ### Canary Tripwires Triggered
+  - `/home/user/.ssh/id_rsa` at 13:47:22 — SSH key theft attempt
+  
+  ### Recommended Actions
+  - Block IP 192.168.1.x immediately
+  - Rotate all SSH keys on production servers
+  - Check auth logs on 10.0.0.0/24
+  ```
+- Renders the report in a styled `st.markdown()` panel with a download button
+
+---
+
+## Verification Plan
+
+### Simulated Attack Sequence
+```bash
+ssh user@localhost -p 2222
+cat .bash_history          # → Groq detects credential_hunt
+ls                         # → fake config.php appears in listing
+cat config.php             # → 🚨 CRITICAL fires in dashboard
+```
+
+### Expected Dashboard Behavior
+1. Alert banner appears within 1 second of `cat config.php`
+2. Session Intelligence tab shows intent progression: `reconnaissance → credential_hunt`
+3. "Generate Threat Report" button produces full Groq report
+
+> [!NOTE]
+> Breadcrumb generation runs in a daemon thread — the attacker's terminal responds instantly, no lag.
