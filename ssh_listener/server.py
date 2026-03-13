@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class GhostNetSSHServer(paramiko.ServerInterface):
+class AeroGhostSSHServer(paramiko.ServerInterface):
     """
     Custom SSH Server that accepts any username/password
     and forwards commands to the AI backend.
@@ -136,7 +136,7 @@ class SSHServerSocket:
             transport.add_server_key(host_key)
             
             # Create server interface
-            server = GhostNetSSHServer(client_ip)
+            server = AeroGhostSSHServer(client_ip)
             transport.start_server(server=server)
             
             # Get the channel
@@ -160,8 +160,7 @@ class SSHServerSocket:
 
     def _handle_shell(self, channel, session_id, client_ip):
         """Handle interactive shell communication with proper keystroke buffering"""
-        channel.send("Welcome to GhostNet\r\n")
-        channel.send("user@ghostnet:~$ ")
+        channel.send("user@aeroghost:~$ ")
         
         command_buffer = ""
         
@@ -188,7 +187,7 @@ class SSHServerSocket:
                             self.live_feed_callback(session_id, "")
                         
                         if not command:
-                            channel.send("user@ghostnet:~$ ")
+                            channel.send("user@aeroghost:~$ ")
                             continue
                         
                         # Handle exit
@@ -226,7 +225,7 @@ class SSHServerSocket:
                     elif byte == 0x03:
                         command_buffer = ""
                         channel.send("^C\r\n")
-                        channel.send("user@ghostnet:~$ ")
+                        channel.send("user@aeroghost:~$ ")
                         # Clear live feed
                         if self.live_feed_callback:
                             self.live_feed_callback(session_id, "")

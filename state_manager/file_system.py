@@ -142,51 +142,13 @@ class VirtualFileSystem:
         # --- /home/user ---
         user_home = home.add_child(FSNode("user", "dir", permissions="rwxr-xr-x", owner="user", group="user"))
 
-        # Randomized content pools
-        doc_files = [
-            ("report_2025.pdf", 245760, "rw-r--r--"),
-            ("budget.xlsx", 67584, "rw-r--r--"),
-            ("notes.txt", 1247, "rw-r--r--"),
-            ("project_plan.docx", 189440, "rw-r--r--"),
-            ("meeting_notes.md", 3521, "rw-r--r--"),
-            ("invoice_march.pdf", 156672, "rw-r--r--"),
-        ]
-        desktop_files = [
-            ("screenshot.png", 524288, "rw-r--r--"),
-            ("todo.txt", 312, "rw-r--r--"),
-            ("wallpaper.jpg", 2097152, "rw-r--r--"),
-            ("shortcut.desktop", 245, "rw-r--r--"),
-        ]
-        download_files = [
-            ("setup.sh", 4096, "rwxr-xr-x"),
-            ("archive.tar.gz", 10485760, "rw-r--r--"),
-            ("installer.deb", 52428800, "rw-r--r--"),
-            ("config_backup.zip", 2097152, "rw-r--r--"),
-            ("script.py", 2048, "rwxr-xr-x"),
-        ]
-
-        # Pick random subsets
-        chosen_docs = random.sample(doc_files, k=random.randint(2, 4))
-        chosen_desktop = random.sample(desktop_files, k=random.randint(1, 3))
-        chosen_downloads = random.sample(download_files, k=random.randint(2, 4))
-
-        # Create user directories
-        documents = user_home.add_child(FSNode("Documents", "dir", owner="user", group="user"))
-        desktop = user_home.add_child(FSNode("Desktop", "dir", owner="user", group="user"))
-        downloads = user_home.add_child(FSNode("Downloads", "dir", owner="user", group="user"))
-        pictures = user_home.add_child(FSNode("Pictures", "dir", owner="user", group="user"))
-        music = user_home.add_child(FSNode("Music", "dir", owner="user", group="user"))
-        videos = user_home.add_child(FSNode("Videos", "dir", owner="user", group="user"))
-
-        for fname, fsize, fperm in chosen_docs:
-            documents.add_child(FSNode(fname, "file", permissions=fperm, owner="user", group="user", size=fsize,
-                                       content=f"[Binary content of {fname}]" if not fname.endswith('.txt') and not fname.endswith('.md') else self._random_text_content(fname)))
-        for fname, fsize, fperm in chosen_desktop:
-            desktop.add_child(FSNode(fname, "file", permissions=fperm, owner="user", group="user", size=fsize,
-                                     content=f"[Binary content of {fname}]" if not fname.endswith('.txt') else self._random_text_content(fname)))
-        for fname, fsize, fperm in chosen_downloads:
-            downloads.add_child(FSNode(fname, "file", permissions=fperm, owner="user", group="user", size=fsize,
-                                       content=f"[Binary content of {fname}]" if not fname.endswith('.sh') and not fname.endswith('.py') else self._random_text_content(fname)))
+        # Generate Deep Thematic Networks
+        self._generate_themed_network(user_home, "Documents", max_depth=5)
+        self._generate_themed_network(user_home, "Desktop", max_depth=3)
+        self._generate_themed_network(user_home, "Downloads", max_depth=4)
+        self._generate_themed_network(user_home, "Pictures", max_depth=5)
+        self._generate_themed_network(user_home, "Music", max_depth=5)
+        self._generate_themed_network(user_home, "Videos", max_depth=4)
 
         # Dot files
         user_home.add_child(FSNode(".bashrc", "file", owner="user", group="user", permissions="rw-r--r--", size=3771,
@@ -198,6 +160,106 @@ class VirtualFileSystem:
         user_home.add_child(FSNode(".ssh", "dir", owner="user", group="user", permissions="rwx------"))
 
         return root
+
+    def _generate_binary_rubbish(self, size: int = 500) -> str:
+        """Generate random unprintable ascii and hex bytes to simulate opening a binary file."""
+        # Mix of standard ascii, extended ascii, and control characters to create that classic terminal 'rubbish' look
+        chars = [chr(random.randint(1, 255)) for _ in range(size)]
+        return "".join(chars)
+
+    def _generate_themed_network(self, parent_node: FSNode, theme: str, max_depth: int, current_depth: int = 1):
+        """Recursively generate a directory tree with thematic subfolders and files."""
+        if current_depth > max_depth:
+            return
+
+        # Create the directory for this level
+        if current_depth == 1:
+            dir_name = theme
+        else:
+            # Theme-appropriate subfolder names
+            subfolders = {
+                "Documents": ["2024", "2025", "Projects", "Confidential", "Financials", "Drafts", "Archives", "Meetings"],
+                "Desktop": ["Shortcuts", "Temp", "Work", "ToOrganize"],
+                "Downloads": ["Software", "Torrents", "PDFs", "ISOs", "Updates"],
+                "Pictures": ["Vacation", "Family", "Screenshots", "Wallpapers", "Camera_Roll", "2024_Trip", "Memes"],
+                "Music": ["Playlists", "Mixes", "Albums", "Podcasts", "Workout", "Chill", "Live_Sets"],
+                "Videos": ["Movies", "Clips", "Recordings", "Tutorials", "CCTV", "Exports"]
+            }
+            dir_name = random.choice(subfolders.get(theme, ["Misc", "Data", "Old"]))
+
+        # Check if dir already exists (can happen at root depth), if so just use it
+        existing = parent_node.get_child(dir_name)
+        if existing and existing.is_dir():
+            current_dir = existing
+        else:
+            current_dir = parent_node.add_child(FSNode(dir_name, "dir", owner="user", group="user"))
+
+        # Decide how many files to generate in this directory (fewer at deeper levels usually)
+        num_files = random.randint(0, 5) if current_depth > 1 else random.randint(2, 6)
+        
+        # Themed file generation
+        for i in range(num_files):
+            file_configs = {
+                "Documents": [
+                    ("report_{}.pdf", [2024, 2025, "Q1", "final"]),
+                    ("budget_{}.xlsx", ["draft", "final", "2025"]),
+                    ("notes_{}.txt", ["meeting", "project", "urgent"]),
+                    ("plan_{}.docx", ["draft", "Q4", "strategy"])
+                ],
+                "Desktop": [
+                    ("screenshot_{}.png", [random.randint(100, 999), "login", "error"]),
+                    ("shortcut_{}.desktop", ["app", "game", "tool"]),
+                    ("todo_{}.txt", ["work", "personal"])
+                ],
+                "Downloads": [
+                    ("installer_v{}.deb", ["1.0", "2.4", "beta"]),
+                    ("archive_{}.tar.gz", ["backup", "src", "data"]),
+                    ("setup_{}.sh", ["env", "db", "tools"]),
+                    ("manual_{}.pdf", ["v1", "v2", "english"])
+                ],
+                "Pictures": [
+                    ("IMG_{}.jpg", [random.randint(1000, 9999)]),
+                    ("DSC_{}.png", [random.randint(1000, 9999)]),
+                    ("wallpaper_{}.jpg", ["nature", "dark", "abstract"])
+                ],
+                "Music": [
+                    ("track_{}.mp3", [random.randint(1, 20), "intro", "outro"]),
+                    ("mix_{}.wav", ["summer", "workout", "chill"]),
+                    ("podcast_ep_{}.mp3", [random.randint(1, 150)])
+                ],
+                "Videos": [
+                    ("vid_{}.mp4", [random.randint(1000, 9999)]),
+                    ("movie_{}.mkv", ["rip", "hd", "cam"]),
+                    ("recording_{}.mp4", ["zoom", "meet", "cctv"])
+                ]
+            }
+
+            theme_configs = file_configs.get(theme, file_configs["Documents"])
+            chosen_template, chosen_args = random.choice(theme_configs)
+            fname = chosen_template.format(random.choice(chosen_args))
+
+            # File attributes
+            fsize = random.randint(1024, 52428800)  # Random size 1KB - 50MB
+            
+            # Executables get execute permissions
+            fperm = "rwxr-xr-x" if fname.endswith(('.sh', '.py')) else "rw-r--r--"
+
+            # Is it a text file?
+            is_text = fname.endswith(('.txt', '.md', '.sh', '.py'))
+            if is_text:
+                content = self._random_text_content(fname)
+            else:
+                # Generate binary rubbish for non-text files, keep length reasonable to not lag the browser
+                content = self._generate_binary_rubbish(size=random.randint(2000, 5000))
+
+            current_dir.add_child(FSNode(fname, "file", permissions=fperm, owner="user", group="user", size=fsize, content=content))
+
+        # Recursively create subdirectories 
+        # (Lower probability of branching at deeper levels to prevent exploding trees)
+        if current_depth < max_depth:
+            num_subdirs = random.randint(0, 3) if current_depth > 2 else random.randint(1, 4)
+            for _ in range(num_subdirs):
+                self._generate_themed_network(current_dir, theme, max_depth, current_depth + 1)
 
     def _random_text_content(self, filename: str) -> str:
         """Generate random text content for text files."""
