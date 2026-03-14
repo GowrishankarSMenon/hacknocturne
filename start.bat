@@ -35,12 +35,16 @@ pip install -r requirements.txt
 echo Starting SSH Honeypot Server...
 start "GhostNet SSH Server" cmd /c "python main.py"
 
-:: Start the Streamlit dashboard in a new command prompt window
-echo Starting Intelligence Dashboard...
-start "GhostNet Dashboard" cmd /c "streamlit run dashboard/app.py"
+:: Start the FastAPI REST Server in a new command prompt window
+echo Starting REST API Backend...
+start "GhostNet API" cmd /c "uvicorn api.server:app --port 8000"
+
+:: Start the Next.js enterprise dashboard in a new command prompt window
+echo Starting Next.js Intelligence Dashboard...
+start "GhostNet Dashboard" cmd /c "cd website && npm run dev"
 
 echo.
 echo GhostNet is launching!
-echo The SSH server and Dashboard are opening in separate windows.
+echo The SSH server, REST API, and Dashboard are opening in separate windows.
 echo You can run stop.bat to shut them all down.
 timeout /t 5

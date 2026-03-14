@@ -72,15 +72,16 @@ def start_honeypot(python_exe):
 
 
 def start_dashboard(python_exe):
-    """Start the Streamlit intelligence dashboard."""
-    logger.info("Starting Intelligence Dashboard on port 8501...")
+    """Start the Next.js enterprise intelligence dashboard."""
+    logger.info("Starting Next.js Intelligence Dashboard on port 3000...")
+    # Change dir to website and run npm dev
+    cwd = os.path.join(os.getcwd(), "website")
     proc = subprocess.Popen(
-        [python_exe, "-m", "streamlit", "run", "dashboard/app.py",
-         "--server.headless", "true",
-         "--server.port", "8501",
-         "--browser.gatherUsageStats", "false"],
+        ["npm", "run", "dev"],
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        shell=(os.name == 'nt') # Needs shell=True on Windows to find npm
     )
     processes.append(("Dashboard", proc))
     return proc
