@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 import { Terminal, ShieldAlert, Activity, Clock, Lock, Network, Fingerprint } from 'lucide-react';
 import Link from 'next/link';
 
