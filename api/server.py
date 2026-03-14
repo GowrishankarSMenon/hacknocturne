@@ -71,6 +71,7 @@ def health():
 def get_sessions(status: Optional[str] = None):
     """
     Get all sessions. Optional filter: ?status=active or ?status=closed
+    Includes dynamic threat score calculation.
     """
     conn = _get_db()
     if status:
@@ -78,7 +79,32 @@ def get_sessions(status: Optional[str] = None):
     else:
         rows = conn.execute("SELECT * FROM sessions ORDER BY start_time DESC").fetchall()
     conn.close()
-    return {"sessions": [dict(r) for r in rows], "count": len(rows)}
+    
+    sessions = []
+    for r in rows:
+        session = dict(r)
+        # Calculate live threat score
+        score = 0
+        sdb = _get_session_db(session["session_id"])
+        if sdb:
+            # Add points based on threat events severity
+            threats = sdb.execute("SELECT severity FROM threat_events").fetchall()
+            for t in threats:
+                sev = t["severity"]
+                if sev == "critical": score += 25
+                elif sev == "high": score += 15
+                elif sev == "medium": score += 10
+                elif sev == "low": score += 5
+                
+            # Cap at 100
+            session["threat_score"] = min(100, score)
+            sdb.close()
+        else:
+            session["threat_score"] = 0
+            
+        sessions.append(session)
+        
+    return {"sessions": sessions, "count": len(sessions)}
 
 
 @app.get("/api/sessions/{session_id}")

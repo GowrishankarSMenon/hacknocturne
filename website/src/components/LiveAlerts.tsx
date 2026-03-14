@@ -71,7 +71,7 @@ export function LiveAlerts() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-white font-medium capitalize flex items-center gap-2">
-                    {alert.threat_type.replace('_', ' ')}
+                    {(alert.threat_type || 'Unknown').replace('_', ' ')}
                     {alert.client_ip && <span className="text-zinc-500 text-xs px-2 py-0.5 bg-zinc-800 rounded">{alert.client_ip}</span>}
                   </span>
                   <span className="text-xs text-zinc-500">

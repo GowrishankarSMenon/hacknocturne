@@ -61,9 +61,13 @@ export function SessionTracker() {
               <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Duration</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800/50">
+          <tbody className="divide-y divide-zinc-800/50 cursor-pointer">
             {sessions.map((session) => (
-              <tr key={session.session_id} className="hover:bg-zinc-800/20 transition-colors">
+              <tr 
+                key={session.session_id} 
+                onClick={() => window.location.href = `/dashboard/${session.session_id}`}
+                className="hover:bg-zinc-800/40 transition-colors"
+              >
                 <td className="px-6 py-4 whitespace-nowrap">
                   {session.status === 'active' ? (
                     <span className="flex items-center gap-2 text-green-400 text-sm font-medium">
