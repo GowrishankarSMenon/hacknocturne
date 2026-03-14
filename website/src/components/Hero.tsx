@@ -6,7 +6,7 @@ import Link from 'next/link';
 export function Hero() {
   return (
     <div className="relative pt-32 pb-20 sm:pt-40 sm:pb-24 overflow-hidden bg-zinc-950">
-      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-20" />
+      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-10" />
       
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium mb-8">

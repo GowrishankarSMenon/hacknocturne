@@ -151,6 +151,11 @@ def get_alerts(severity: Optional[str] = None):
         return {"alerts": [], "count": 0}
 
     all_alerts = []
+    # Get IP mapping for sessions
+    conn = _get_db()
+    ip_map = {r["session_id"]: r["client_ip"] for r in conn.execute("SELECT session_id, client_ip FROM sessions").fetchall()}
+    conn.close()
+
     for fname in os.listdir(sessions_dir):
         if not fname.endswith(".db"):
             continue
@@ -158,16 +163,26 @@ def get_alerts(severity: Optional[str] = None):
         try:
             sdb = sqlite3.connect(os.path.join(sessions_dir, fname))
             sdb.row_factory = sqlite3.Row
-            # Check if threat_events table exists
             tables = sdb.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='threat_events'").fetchall()
             if tables:
                 if severity:
                     rows = sdb.execute("SELECT * FROM threat_events WHERE severity = ? ORDER BY timestamp DESC", (severity,)).fetchall()
                 else:
                     rows = sdb.execute("SELECT * FROM threat_events ORDER BY timestamp DESC").fetchall()
+                
                 for r in rows:
                     alert = dict(r)
                     alert["session_id"] = session_id
+                    alert["client_ip"] = ip_map.get(session_id, "unknown")
+                    # Map event_type to threat_type for frontend compatibility
+                    alert["threat_type"] = alert.get("event_type", "unknown")
+                    # Extract message from data if details is missing
+                    if "data" in alert and alert["data"]:
+                        try:
+                            data_obj = json.loads(alert["data"])
+                            alert["details"] = data_obj.get("message", data_obj.get("filepath", "Unknown event"))
+                        except:
+                            alert["details"] = alert["data"]
                     all_alerts.append(alert)
             sdb.close()
         except Exception:

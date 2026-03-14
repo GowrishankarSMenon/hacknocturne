@@ -87,22 +87,22 @@ export function SessionTracker() {
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-white font-mono text-sm">{session.client_ip}</span>
-                  <p className="text-xs text-zinc-500 truncate max-w-[150px]">{session.client_software}</p>
+                  <span className="text-white font-mono text-sm">{String(session.client_ip || 'unknown')}</span>
+                  <p className="text-xs text-zinc-500 truncate max-w-[150px]">{String(session.client_software || 'Generic SSH Client')}</p>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className="flex items-center gap-1.5 text-zinc-300 text-sm font-mono bg-zinc-950 px-2 py-1 rounded inline-flex border border-zinc-800">
                     <Lock className="w-3 h-3 text-zinc-500" />
-                    user:{session.password_used || '***'}
+                    {String(session.password_used || '***')}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 py-1 rounded border text-xs font-bold ${getScoreColor(session.threat_score)}`}>
-                    {session.threat_score} / 100
+                  <span className={`px-2 py-1 rounded border text-xs font-bold ${getScoreColor(session.threat_score || 0)}`}>
+                    {session.threat_score || 0} / 100
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">
-                  {new Date(session.start_time).toLocaleTimeString()}
+                  {session.start_time ? new Date(session.start_time).toLocaleTimeString() : 'N/A'}
                 </td>
               </tr>
             ))}
