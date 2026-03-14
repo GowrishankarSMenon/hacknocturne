@@ -41,7 +41,7 @@ start "GhostNet API" cmd /c "uvicorn api.server:app --port 8000"
 
 :: Start the Next.js enterprise dashboard in a new command prompt window
 echo Starting Next.js Intelligence Dashboard...
-start "GhostNet Dashboard" cmd /c "cd website && npm run dev"
+start "GhostNet Dashboard" cmd /c "cd website && npm install && npm run dev"
 
 echo.
 echo GhostNet is launching!

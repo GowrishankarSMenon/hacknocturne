@@ -44,6 +44,24 @@ class GhostNetDatabase:
         )
         """)
 
+        # Auto-migrate missing columns for older databases
+        existing_columns = [row[1] for row in cursor.execute("PRAGMA table_info(sessions)").fetchall()]
+        
+        migrations = {
+            "client_software": "TEXT",
+            "password_used": "TEXT",
+            "client_port": "INTEGER",
+            "classification": "TEXT DEFAULT 'unknown'",
+            "avg_ipd": "REAL DEFAULT 0.0"
+        }
+        
+        for col, col_type in migrations.items():
+            if col not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE sessions ADD COLUMN {col} {col_type}")
+                except Exception as e:
+                    pass
+
         # Live typing table (for real-time dashboard feed)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS live_typing (
