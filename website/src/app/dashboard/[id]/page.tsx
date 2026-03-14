@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 
 import { Terminal, ShieldAlert, Activity, Clock, Lock, Network, Fingerprint } from 'lucide-react';
 import Link from 'next/link';
@@ -34,25 +34,29 @@ interface SessionDetail {
   threat_events: ThreatEvent[];
 }
 
-export default function SessionIntelligenceView({ params }: { params: { id: string } }) {
+export default function SessionIntelligenceView({ params }: { params: Promise<{ id: string }> }) {
+  const unwrappedParams = use(params);
+  const sessionId = unwrappedParams.id;
   const [session, setSession] = useState<SessionDetail | null>(null);
 
   useEffect(() => {
+    if (!sessionId) return;
+    
     const fetchSessionData = async () => {
       try {
         // Fetch session commands
-        const cmdRes = await fetch(`http://localhost:8000/api/sessions/${params.id}`);
+        const cmdRes = await fetch(`http://localhost:8000/api/sessions/${sessionId}`);
         const sessionData = await cmdRes.json();
         
         // Fetch all alerts to filter by session_id
         const alertRes = await fetch(`http://localhost:8000/api/alerts`);
         const alertData = await alertRes.json();
-        const sessionAlerts = alertData.alerts.filter((a: ThreatEvent & { session_id: string }) => a.session_id === params.id);
+        const sessionAlerts = alertData.alerts.filter((a: ThreatEvent & { session_id: string }) => a.session_id === sessionId);
 
         // Fetch the global session list to get the real-time threat score
         const globalRes = await fetch('http://localhost:8000/api/sessions');
         const globalData = await globalRes.json();
-        const globalSession = globalData.sessions.find((s: SessionDetail) => s.session_id === params.id);
+        const globalSession = globalData.sessions.find((s: SessionDetail) => s.session_id === sessionId);
 
         setSession({
           ...sessionData,
@@ -68,7 +72,7 @@ export default function SessionIntelligenceView({ params }: { params: { id: stri
     fetchSessionData();
     const interval = setInterval(fetchSessionData, 2000);
     return () => clearInterval(interval);
-  }, [params.id]);
+  }, [sessionId]);
 
   if (!session) return (
     <div className="min-h-screen bg-zinc-950 p-8 flex items-center justify-center">
