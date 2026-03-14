@@ -1,25 +1,59 @@
-version: "3.9"
-
 services:
-  aeroghost:
-    build: .
-    container_name: aeroghost-honeypot
+  # ─────────────────────────────────────────────
+  # Python Backend: SSH Honeypot + FastAPI REST API
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: aeroghost-backend
     ports:
-      - "2222:2222"   # SSH Honeypot
-      - "8501:8501"   # Streamlit Dashboard
-      - "8000:8000"   # REST API
+      - "2222:2222"   # SSH Honeypot (public-facing)
+      - "8000:8000"   # FastAPI REST API
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - SSH_PORT=2222
+      - SSH_HOST=0.0.0.0
+      - DATABASE_FILE=/app/logs/ghostnet.db
+      - LOG_FILE=/app/logs/ghostnet.log
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_LATENCY_INJECTION=${ENABLE_LATENCY_INJECTION:-true}
+      - LATENCY_MS=${LATENCY_MS:-500}
+      - COMMAND_FAILURE_RATE=${COMMAND_FAILURE_RATE:-0.05}
     volumes:
       - aeroghost-logs:/app/logs
-      - aeroghost-data:/app/data
+    restart: unless-stopped
+    networks:
+      - aeroghost-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('localhost',2222),2); s.close()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  # ─────────────────────────────────────────────
+  # Next.js Intelligence Dashboard
+  # ─────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: aeroghost-dashboard
+    ports:
+      - "3000:3000"   # Next.js Dashboard
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      - backend
     restart: unless-stopped
     networks:
       - aeroghost-net
 
 volumes:
   aeroghost-logs:
-  aeroghost-data:
 
 networks:
   aeroghost-net:

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+website/node_modules/
+website/.next/
+website/.env.local
+website/.env.production
+
+# Runtime / logs (mounted as volume in Docker)
+logs/
+*.db
+*.log
+
+# Dev tools
+.git/
+.gitignore
+.vscode/
+.idea/
+*.md
+
+# Test files (not needed in image)
+test_*.py
+rsa_tester.py
+
+# OS
+.DS_Store
+Thumbs.db
