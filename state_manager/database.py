@@ -38,7 +38,9 @@ class GhostNetDatabase:
             status TEXT,
             client_software TEXT,
             password_used TEXT,
-            client_port INTEGER
+            client_port INTEGER,
+            classification TEXT DEFAULT 'unknown',
+            avg_ipd REAL DEFAULT 0.0
         )
         """)
 
@@ -118,6 +120,24 @@ class GhostNetDatabase:
         if client_port is not None:
             updates.append("client_port = ?")
             params.append(client_port)
+        if updates:
+            params.append(session_id)
+            cursor.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?", params)
+            conn.commit()
+        conn.close()
+
+    def update_session_intelligence(self, session_id: str, classification: str = None, avg_ipd: float = None):
+        """Update session with intelligence classification data."""
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        updates = []
+        params = []
+        if classification is not None:
+            updates.append("classification = ?")
+            params.append(classification)
+        if avg_ipd is not None:
+            updates.append("avg_ipd = ?")
+            params.append(avg_ipd)
         if updates:
             params.append(session_id)
             cursor.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE session_id = ?", params)

@@ -28,8 +28,11 @@ interface SessionDetail {
   client_ip: string;
   client_software: string;
   password_used: string;
+  client_port: number;
   status: string;
   threat_score: number;
+  classification: string;
+  avg_ipd: number;
   commands: Command[];
   threat_events: ThreatEvent[];
 }
@@ -44,24 +47,31 @@ export default function SessionIntelligenceView({ params }: { params: Promise<{ 
     
     const fetchSessionData = async () => {
       try {
-        // Fetch session commands
-        const cmdRes = await fetch(`http://localhost:8000/api/sessions/${sessionId}`);
-        const sessionData = await cmdRes.json();
+        // Fetch session details
+        const detailsRes = await fetch(`http://localhost:8000/api/sessions/${sessionId}`);
+        const sessionData = await detailsRes.json();
         
         // Fetch all alerts to filter by session_id
         const alertRes = await fetch(`http://localhost:8000/api/alerts`);
         const alertData = await alertRes.json();
         const sessionAlerts = alertData.alerts.filter((a: ThreatEvent & { session_id: string }) => a.session_id === sessionId);
 
-        // Fetch the global session list to get the real-time threat score
+        // Fetch the global session list to get the real-time threat score and persisted intelligence
         const globalRes = await fetch('http://localhost:8000/api/sessions');
         const globalData = await globalRes.json();
         const globalSession = globalData.sessions.find((s: SessionDetail) => s.session_id === sessionId);
 
+        // Calculate a more robust threat score if the classification is bot/suspicious
+        let finalScore = globalSession?.threat_score || 0;
+        if (globalSession?.classification === 'bot') finalScore = Math.max(finalScore, 85);
+        if (globalSession?.classification === 'suspicious') finalScore = Math.max(finalScore, 45);
+
         setSession({
           ...sessionData,
+          classification: globalSession?.classification || 'unknown',
+          avg_ipd: globalSession?.avg_ipd || 0,
           threat_events: sessionAlerts,
-          threat_score: globalSession?.threat_score || 0
+          threat_score: finalScore
         });
 
       } catch (e) {
@@ -97,6 +107,13 @@ export default function SessionIntelligenceView({ params }: { params: Promise<{ 
     return 'text-green-500';
   };
 
+  const getClassificationBadge = (classification: string) => {
+    if (classification === 'bot') return <span className="flex items-center gap-1 bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Automated Bot</span>;
+    if (classification === 'suspicious') return <span className="flex items-center gap-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Suspicious Script</span>;
+    if (classification === 'human') return <span className="flex items-center gap-1 bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Human Attacker</span>;
+    return <span className="flex items-center gap-1 bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Analyzing Pattern...</span>;
+  };
+
   return (
     <main className="min-h-screen bg-zinc-950 selection:bg-blue-500/30 p-4 sm:p-6 lg:p-8">
       
@@ -106,11 +123,14 @@ export default function SessionIntelligenceView({ params }: { params: Promise<{ 
           <Link href="/dashboard" className="text-zinc-500 hover:text-white transition-colors bg-zinc-900 border border-zinc-800 p-2 rounded-lg">
             <span className="text-sm font-bold flex items-center gap-1">← Back</span>
           </Link>
-          <div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-              <Fingerprint className="w-6 h-6 text-indigo-500" />
-              Session Intelligence: {session.session_id.split('-')[0]}
-            </h1>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                    <Fingerprint className="w-6 h-6 text-indigo-500" />
+                    Session Intelligence: {session.session_id.split('-')[0]}
+                </h1>
+                {getClassificationBadge(session.classification)}
+            </div>
             <div className="flex items-center gap-3 mt-1 text-sm">
               <span className={`flex items-center gap-1.5 ${session.status === 'active' ? 'text-green-400' : 'text-zinc-500'}`}>
                 <span className={`relative flex h-2 w-2 ${session.status === 'active' ? '' : 'hidden'}`}>
@@ -145,24 +165,28 @@ export default function SessionIntelligenceView({ params }: { params: Promise<{ 
              </div>
              <div className="p-5 space-y-4">
                <div>
-                  <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Origin IP</p>
-                  <p className="font-mono text-white text-lg bg-zinc-950 p-2 rounded border border-zinc-800">{session.client_ip}</p>
+                  <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Origin IP & Port</p>
+                  <p className="font-mono text-white text-lg bg-zinc-950 p-2 rounded border border-zinc-800">
+                    {session.client_ip}<span className="text-zinc-500 text-sm ml-1">:{session.client_port || '????'}</span>
+                  </p>
                </div>
                <div className="grid grid-cols-2 gap-4">
                  <div>
-                    <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Credentials</p>
+                    <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Keystroke Analytics</p>
                     <p className="font-mono text-zinc-300 text-sm flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> user:{session.password_used || '***'}
+                      <Activity className="w-3 h-3" /> {session.avg_ipd ? `${session.avg_ipd.toFixed(1)}ms` : 'Calculating...'}
                     </p>
                  </div>
                  <div>
-                    <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Duration</p>
-                    <p className="text-zinc-300 text-sm">{session.end_time ? 'Closed' : 'Live'}</p>
+                    <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Credentials</p>
+                    <p className="font-mono text-zinc-300 text-sm flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> {session.password_used || '***'}
+                    </p>
                  </div>
                </div>
                <div>
-                  <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Client Software Fingerprint</p>
-                  <p className="font-mono text-zinc-400 text-xs truncate">{session.client_software}</p>
+                  <p className="text-xs text-zinc-500 uppercase font-semibold mb-1">Fingerprint</p>
+                  <p className="font-mono text-zinc-400 text-xs truncate bg-zinc-950 p-2 rounded border border-zinc-800/50">{session.client_software}</p>
                </div>
              </div>
           </div>

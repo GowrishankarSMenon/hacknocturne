@@ -321,12 +321,24 @@ class GhostNetHoneypot:
 
             # Timing analyzer: classify bot/human periodically
             classification, avg_ipd = self.timing_analyzer.classify(session_id)
-            if classification in ("bot", "suspicious"):
-                session_db.log_threat_event(
-                    "gia_warning",
-                    "high" if classification == "bot" else "medium",
-                    {"check": "bot_detected", "message": f"Typing classified as {classification} (avg IPD: {avg_ipd}ms)"}
-                )
+            if classification in ("bot", "suspicious", "human"):
+                # Persist to global database for historical tracking
+                try:
+                    self.database.update_session_intelligence(
+                        session_id, 
+                        classification=classification, 
+                        avg_ipd=avg_ipd
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to persist intelligence: {e}")
+
+                # Log to per-session DB as a threat event if suspicious/bot
+                if classification in ("bot", "suspicious"):
+                    session_db.log_threat_event(
+                        "gia_warning",
+                        "high" if classification == "bot" else "medium",
+                        {"check": "bot_detected", "message": f"Typing classified as {classification} (avg IPD: {avg_ipd}ms)"}
+                    )
 
             logger.info(f"[{session_id}] Command: {command[:50]} ({execution_time}ms)")
 
